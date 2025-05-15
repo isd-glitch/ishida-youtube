@@ -43,43 +43,43 @@ async function switchToWorkingInstance() {
     return false;
 }
 
-// API呼び出し
+// API呼び出しの改善
 async function fetchAPI(endpoint, params = {}) {
-    try {
-        const queryString = new URLSearchParams({
-            ...params
-        }).toString();
-        
-        const response = await fetch(`${currentInstance}${endpoint}${queryString ? '?' + queryString : ''}`);
-        if (!response.ok) throw new Error('API request failed');
-        return await response.json();
-    } catch (error) {
-        console.error('API Error:', error);
-        // 別のインスタンスを試す
-        const currentIndex = INVIDIOUS_INSTANCES.indexOf(currentInstance);
-        if (currentIndex < INVIDIOUS_INSTANCES.length - 1) {
-            currentInstance = INVIDIOUS_INSTANCES[currentIndex + 1];
-            console.log('Switching to instance:', currentInstance);
-            return fetchAPI(endpoint, params);
+    for (let i = 0; i < INVIDIOUS_INSTANCES.length; i++) {
+        try {
+            const instance = INVIDIOUS_INSTANCES[i];
+            const queryString = new URLSearchParams(params).toString();
+            const url = `${instance}${endpoint}${queryString ? '?' + queryString : ''}`;
+            
+            const response = await fetch(url);
+            if (!response.ok) throw new Error('API request failed');
+            
+            currentInstance = instance; // 成功したインスタンスを記録
+            return await response.json();
+        } catch (error) {
+            console.error(`インスタンス ${INVIDIOUS_INSTANCES[i]} でエラー:`, error);
+            if (i === INVIDIOUS_INSTANCES.length - 1) {
+                throw error; // 全てのインスタンスで失敗
+            }
         }
-        throw error;
     }
 }
 
-// 動画の検索
-async function searchVideos(query) {
-    showLoading(true);
+// 検索機能の改善
+async function searchVideos(query, params = {}) {
     try {
-        await switchToWorkingInstance();
-        const response = await fetch(`${currentInstance}/api/v1/search?q=${encodeURIComponent(query)}`);
-        if (!response.ok) throw new Error('検索に失敗しました');
-        const videos = await response.json();
-        return Array.isArray(videos) ? videos : [];
+        const searchParams = {
+            q: query,
+            region: 'JP',
+            type: 'video',
+            ...params
+        };
+        
+        const results = await fetchAPI('/api/v1/search', searchParams);
+        return Array.isArray(results) ? results : [];
     } catch (error) {
         console.error('検索エラー:', error);
         return [];
-    } finally {
-        showLoading(false);
     }
 }
 
@@ -161,6 +161,126 @@ async function getRelatedVideos(videoId) {
     } catch (error) {
         console.error('関連動画の取得エラー:', error);
         return [];
+    }
+}
+
+// サムネイル取得の改善
+function getVideoThumbnail(videoId, quality = 'maxresdefault') {
+    const qualities = ['maxresdefault', 'sddefault', 'hqdefault', 'mqdefault', 'default'];
+    const img = document.createElement('img');
+    let currentQualityIndex = qualities.indexOf(quality);
+
+    return new Promise((resolve) => {
+        img.onload = () => {
+            // 画像が正常にロードされた場合
+            if (img.naturalWidth > 120) {
+                resolve(img.src);
+            } else if (currentQualityIndex < qualities.length - 1) {
+                // 次の品質を試す
+                currentQualityIndex++;
+                img.src = `${currentInstance}/vi/${videoId}/${qualities[currentQualityIndex]}.jpg`;
+            } else {
+                // デフォルトのサムネイルを使用
+                resolve(`${currentInstance}/vi/${videoId}/hqdefault.jpg`);
+            }
+        };
+
+        img.onerror = () => {
+            if (currentQualityIndex < qualities.length - 1) {
+                // エラーの場合、次の品質を試す
+                currentQualityIndex++;
+                img.src = `${currentInstance}/vi/${videoId}/${qualities[currentQualityIndex]}.jpg`;
+            } else {
+                // デフォルトのサムネイルを使用
+                resolve(`${currentInstance}/vi/${videoId}/hqdefault.jpg`);
+            }
+        };
+
+        img.src = `${currentInstance}/vi/${videoId}/${quality}.jpg`;
+    });
+}
+
+// 動画カードの生成を改善
+async function createVideoCard(video) {
+    const card = document.createElement('div');
+    card.className = 'video-card';
+    
+    // サムネイルを非同期で取得
+    const thumbnailUrl = await getVideoThumbnail(video.videoId);
+    
+    card.innerHTML = `
+        <div class="thumbnail-wrapper">
+            <img class="thumbnail" 
+                 src="${thumbnailUrl}" 
+                 alt="${video.title}"
+                 loading="lazy">
+            <span class="video-duration">${formatDuration(video.lengthSeconds)}</span>
+        </div>
+        <div class="video-info">
+            <div class="channel-avatar">
+                <img src="${video.authorThumbnails?.[0]?.url || ''}" 
+                     alt="${video.author}"
+                     onerror="this.src='https://via.placeholder.com/36'">
+            </div>
+            <div class="video-details">
+                <h3 class="video-title">${video.title}</h3>
+                <p class="channel-name">${video.author}</p>
+                <div class="video-meta">
+                    <span>${formatViewCount(video.viewCount)}回視聴</span>
+                    <span>•</span>
+                    <span>${formatPublishedDate(video.published)}</span>
+                </div>
+            </div>
+        </div>
+    `;
+
+    card.addEventListener('click', () => {
+        router.navigate(`${window.location.origin}/watch`, { v: video.videoId });
+    });
+
+    return card;
+}
+
+// 動画モーダルの表示
+async function showVideoModal(video) {
+    const modal = document.getElementById('videoModal');
+    const modalTitle = document.getElementById('modalTitle');
+    const videoPlayer = document.getElementById('videoPlayer');
+    
+    try {
+        showLoadingOverlay();
+        const videoDetails = await getVideoDetails(video.videoId);
+        
+        modalTitle.textContent = video.title;
+        document.title = `${video.title} - ようつべ`;
+
+        // プレーヤーの設定
+        videoPlayer.innerHTML = `
+            <iframe
+                src="${currentInstance}/embed/${video.videoId}?autoplay=1"
+                width="100%"
+                height="100%"
+                frameborder="0"
+                allowfullscreen
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            ></iframe>
+        `;
+
+        // 動画情報の更新
+        updateVideoInfo(video, videoDetails);
+        
+        // コメントと関連動画の読み込み
+        await Promise.all([
+            loadComments(video.videoId),
+            loadRelatedVideos(video.videoId)
+        ]);
+
+        modal.style.display = 'block';
+    } catch (error) {
+        console.error('動画の読み込みに失敗しました:', error);
+        alert('動画を読み込めませんでした。');
+    } finally {
+        hideLoadingOverlay();
     }
 }
 
@@ -651,6 +771,8 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // アプリケーションの初期化
     init();
+    setupSearchForm();
+    setupFilters();
 });
 
 // アプリケーションの初期化
@@ -1183,4 +1305,127 @@ const router = new Router();
 // 初期ルートの処理
 document.addEventListener('DOMContentLoaded', () => {
     router.handleRoute();
+});
+
+// 検索フォームのイベントハンドラ
+function setupSearchForm() {
+    const searchForm = document.querySelector('.search-form');
+    const searchInput = document.getElementById('search');
+    const searchSuggestions = document.getElementById('searchSuggestions');
+    let debounceTimeout;
+
+    // 検索候補の表示
+    searchInput.addEventListener('input', () => {
+        clearTimeout(debounceTimeout);
+        debounceTimeout = setTimeout(async () => {
+            const query = searchInput.value.trim();
+            if (query.length < 2) {
+                searchSuggestions.style.display = 'none';
+                return;
+            }
+
+            try {
+                const suggestions = await fetchAPI('/api/v1/search/suggestions', { q: query });
+                if (suggestions && suggestions.length > 0) {
+                    searchSuggestions.innerHTML = suggestions
+                        .map(suggestion => `
+                            <div class="suggestion-item">
+                                <i class="fas fa-search"></i>
+                                <span>${suggestion}</span>
+                            </div>
+                        `).join('');
+                    searchSuggestions.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('検索候補の取得に失敗:', error);
+            }
+        }, 300);
+    });
+
+    // 検索実行
+    searchForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const query = searchInput.value.trim();
+        if (query) {
+            showLoadingOverlay();
+            try {
+                const videos = await searchVideos(query, currentFilters);
+                router.navigate(`${window.location.origin}/results`, { 
+                    search_query: query,
+                    ...currentFilters
+                });
+                renderVideos(videos);
+            } catch (error) {
+                console.error('検索に失敗しました:', error);
+            } finally {
+                hideLoadingOverlay();
+                searchSuggestions.style.display = 'none';
+            }
+        }
+    });
+
+    // 検索候補クリック
+    searchSuggestions.addEventListener('click', (e) => {
+        const suggestionItem = e.target.closest('.suggestion-item');
+        if (suggestionItem) {
+            searchInput.value = suggestionItem.querySelector('span').textContent;
+            searchForm.dispatchEvent(new Event('submit'));
+        }
+    });
+
+    // 検索候補の非表示
+    document.addEventListener('click', (e) => {
+        if (!searchInput.contains(e.target) && !searchSuggestions.contains(e.target)) {
+            searchSuggestions.style.display = 'none';
+        }
+    });
+}
+
+// フィルター機能の設定
+function setupFilters() {
+    const filterDropdown = document.getElementById('filterDropdown');
+    const filterButton = document.getElementById('filterButton');
+
+    filterButton.addEventListener('click', () => {
+        filterDropdown.style.display = 
+            filterDropdown.style.display === 'none' ? 'block' : 'none';
+    });
+
+    // フィルターの変更を監視
+    document.querySelectorAll('.filter-section input').forEach(input => {
+        input.addEventListener('change', async () => {
+            if (input.type === 'radio') {
+                currentFilters[input.name] = input.value;
+            } else if (input.type === 'checkbox') {
+                const index = currentFilters.type.indexOf(input.value);
+                if (input.checked && index === -1) {
+                    currentFilters.type.push(input.value);
+                } else if (!input.checked && index !== -1) {
+                    currentFilters.type.splice(index, 1);
+                }
+            }
+
+            // 現在の検索クエリで再検索
+            const searchInput = document.getElementById('search');
+            const query = searchInput.value.trim();
+            if (query) {
+                const videos = await searchVideos(query, currentFilters);
+                renderVideos(videos);
+            }
+        });
+    });
+
+    // フィルタードロップダウンの外側クリックで閉じる
+    document.addEventListener('click', (e) => {
+        if (!filterButton.contains(e.target) && !filterDropdown.contains(e.target)) {
+            filterDropdown.style.display = 'none';
+        }
+    });
+}
+
+// ページ読み込み時に設定を適用
+document.addEventListener('DOMContentLoaded', () => {
+    setupSearchForm();
+    setupFilters();
+    // ...existing code...
 });
