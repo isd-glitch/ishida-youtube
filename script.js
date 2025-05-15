@@ -1,79 +1,78 @@
-const INVIDIOUS_INSTANCES = [
-    'https://vid.puffyan.us',
-    'https://yt.artemislena.eu',
-    'https://invidious.snopyta.org',
-    'https://invidious.kavin.rocks',
-    'https://invidious.tiekoetter.com',
-    'https://inv.riverside.rocks'
-];
+class InvidiousAPI {
+    constructor() {
+        this.instances = [
+            'https://vid.puffyan.us',
+            'https://yt.artemislena.eu',
+            'https://invidious.snopyta.org',
+            'https://invidious.kavin.rocks',
+            'https://invidious.tiekoetter.com'
+        ];
+        this.currentInstance = this.instances[0];
+        this.retryCount = 3;
+    }
 
-let currentInstance = INVIDIOUS_INSTANCES[0];
-let currentVideos = [];
-let currentFilters = {
-    uploadDate: '',
-    type: [],
-    duration: '',
-    sort: 'relevance'
-};
+    async init() {
+        await this.switchToWorkingInstance();
+    }
 
-// APIエンドポイント
-const endpoints = {
-    trending: '/api/v1/trending',
-    popular: '/api/v1/popular',
-    search: '/api/v1/search',
-    video: '/api/v1/videos',
-    comments: '/api/v1/comments',
-    channel: '/api/v1/channels'
-};
-
-// インスタンスの可用性をチェックし、利用可能なインスタンスに切り替える
-async function switchToWorkingInstance() {
-    for (const instance of INVIDIOUS_INSTANCES) {
-        try {
-            const response = await fetch(`${instance}/api/v1/stats`, {
-                timeout: 5000
-            });
-            if (response.ok) {
-                currentInstance = instance;
-                console.log(`使用するインスタンス: ${instance}`);
-                return true;
+    async switchToWorkingInstance() {
+        for (const instance of this.instances) {
+            try {
+                const response = await this.fetchWithTimeout(`${instance}/api/v1/stats`, {
+                    timeout: 5000
+                });
+                if (response.ok) {
+                    this.currentInstance = instance;
+                    console.log(`使用するインスタンス: ${instance}`);
+                    return true;
+                }
+            } catch (error) {
+                console.log(`インスタンス ${instance} は利用できません: ${error.message}`);
             }
-        } catch (error) {
-            console.log(`インスタンス ${instance} は利用できません: ${error.message}`);
         }
+        throw new Error('利用可能なインスタンスが見つかりません');
     }
-    return false;
-}
 
-// APIエンドポイント関数の改善
-async function fetchAPI(endpoint, params = {}) {
-    let currentInstanceIndex = INVIDIOUS_INSTANCES.indexOf(currentInstance);
-    let attempts = 0;
-
-    while (attempts < INVIDIOUS_INSTANCES.length) {
+    async fetchWithTimeout(url, options = {}) {
+        const { timeout = 5000 } = options;
+        const controller = new AbortController();
+        const id = setTimeout(() => controller.abort(), timeout);
         try {
-            const queryString = new URLSearchParams(params).toString();
-            const url = `${currentInstance}${endpoint}${queryString ? '?' + queryString : ''}`;
-            const response = await fetch(url);
-            
-            if (!response.ok) throw new Error('API request failed');
-            
-            const data = await response.json();
-            return data;
+            const response = await fetch(url, {
+                ...options,
+                signal: controller.signal
+            });
+            clearTimeout(id);
+            return response;
         } catch (error) {
-            console.error(`Instance ${currentInstance} failed:`, error);
-            currentInstanceIndex = (currentInstanceIndex + 1) % INVIDIOUS_INSTANCES.length;
-            currentInstance = INVIDIOUS_INSTANCES[currentInstanceIndex];
-            attempts++;
+            clearTimeout(id);
+            throw error;
         }
     }
-    throw new Error('すべてのインスタンスでリクエストが失敗しました');
-}
 
-// 検索機能の強化
-async function searchVideos(query, params = {}) {
-    showLoadingOverlay();
-    try {
+    async request(endpoint, params = {}) {
+        let lastError;
+        for (let i = 0; i < this.retryCount; i++) {
+            try {
+                const queryString = new URLSearchParams(params).toString();
+                const url = `${this.currentInstance}${endpoint}${queryString ? '?' + queryString : ''}`;
+                const response = await this.fetchWithTimeout(url);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                return await response.json();
+            } catch (error) {
+                lastError = error;
+                await this.switchToWorkingInstance();
+            }
+        }
+        throw lastError;
+    }
+
+    // 検索API
+    async search(query, params = {}) {
         const searchParams = {
             q: query,
             page: params.page || 1,
@@ -84,112 +83,155 @@ async function searchVideos(query, params = {}) {
             region: 'JP',
             ...params
         };
+        
+        return this.request('/api/v1/search', searchParams);
+    }
 
-        const results = await fetchAPI('/api/v1/search', searchParams);
-        return Array.isArray(results) ? results : [];
-    } catch (error) {
-        console.error('検索エラー:', error);
-        return [];
-    } finally {
-        hideLoadingOverlay();
+    // 動画詳細の取得
+    async getVideoDetails(videoId) {
+        return this.request(`/api/v1/videos/${videoId}`);
+    }
+
+    // トレンド動画の取得
+    async getTrending(params = {}) {
+        return this.request('/api/v1/trending', { region: 'JP', ...params });
+    }
+
+    // コメントの取得
+    async getComments(videoId) {
+        return this.request(`/api/v1/comments/${videoId}`);
+    }
+
+    // チャンネル情報の取得
+    async getChannel(channelId) {
+        return this.request(`/api/v1/channels/${channelId}`);
+    }
+
+    // サムネイルURLの生成
+    getThumbnailUrl(videoId, quality = 'hqdefault') {
+        return `${this.currentInstance}/vi/${videoId}/${quality}.jpg`;
     }
 }
 
-// カテゴリー別の動画取得
-async function getCategoryVideos(category) {
-    showLoading(true);
-    try {
-        let endpoint = '/api/v1/trending';
-        const params = { region: 'JP' };
-        
-        switch (category) {
-            case 'music':
-                params.type = 'Music';
-                break;
-            case 'gaming':
-                params.type = 'Gaming';
-                break;
-            case 'news':
-                params.type = 'News';
-                break;
-            case 'sports':
-                params.type = 'Sports';
-                break;
+// VideoManager クラス - 動画の状態管理
+class VideoManager {
+    constructor(api) {
+        this.api = api;
+        this.currentVideo = null;
+        this.currentVideos = [];
+        this.searchHistory = new Set();
+        this.watchHistory = new Set();
+        this.loadHistoryFromStorage();
+    }
+
+    // ローカルストレージからの履歴読み込み
+    loadHistoryFromStorage() {
+        try {
+            const searchHistory = localStorage.getItem('searchHistory');
+            const watchHistory = localStorage.getItem('watchHistory');
+            if (searchHistory) this.searchHistory = new Set(JSON.parse(searchHistory));
+            if (watchHistory) this.watchHistory = new Set(JSON.parse(watchHistory));
+        } catch (error) {
+            console.error('履歴の読み込みに失敗しました:', error);
         }
-        
-        const videos = await fetchAPI(endpoint, params);
-        return Array.isArray(videos) ? videos : [];
-    } catch (error) {
-        console.error('カテゴリー動画の取得エラー:', error);
-        return [];
-    } finally {
-        showLoading(false);
     }
-}
 
-// 動画の詳細情報を取得する関数の改善
-async function getVideoDetails(videoId) {
-    try {
-        const data = await fetchAPI(`/api/v1/videos/${videoId}`);
-        if (!data) throw new Error('動画データが取得できません');
-
-        // タイムスタンプの修正
-        if (data.published) {
-            data.publishedText = formatPublishedTime(data.published);
+    // 履歴の保存
+    saveHistoryToStorage() {
+        try {
+            localStorage.setItem('searchHistory', JSON.stringify([...this.searchHistory]));
+            localStorage.setItem('watchHistory', JSON.stringify([...this.watchHistory]));
+        } catch (error) {
+            console.error('履歴の保存に失敗しました:', error);
         }
+    }
 
-        return data;
-    } catch (error) {
-        console.error('動画データの取得エラー:', error);
-        throw error;
+    // 検索履歴に追加
+    addToSearchHistory(query) {
+        this.searchHistory.add(query);
+        if (this.searchHistory.size > 100) {
+            const [firstItem] = this.searchHistory;
+            this.searchHistory.delete(firstItem);
+        }
+        this.saveHistoryToStorage();
+    }
+
+    // 視聴履歴に追加
+    addToWatchHistory(videoId) {
+        this.watchHistory.add(videoId);
+        if (this.watchHistory.size > 200) {
+            const [firstItem] = this.watchHistory;
+            this.watchHistory.delete(firstItem);
+        }
+        this.saveHistoryToStorage();
+    }
+
+    // 検索の実行
+    async search(query, params = {}) {
+        try {
+            this.addToSearchHistory(query);
+            const results = await this.api.search(query, params);
+            this.currentVideos = results;
+            return results;
+        } catch (error) {
+            console.error('検索に失敗しました:', error);
+            throw error;
+        }
+    }
+
+    // 動画の読み込み
+    async loadVideo(videoId) {
+        try {
+            const video = await this.api.getVideoDetails(videoId);
+            this.currentVideo = video;
+            this.addToWatchHistory(videoId);
+            return video;
+        } catch (error) {
+            console.error('動画の読み込みに失敗しました:', error);
+            throw error;
+        }
+    }
+
+    // トレンド動画の取得
+    async getTrending(params = {}) {
+        try {
+            const videos = await this.api.getTrending(params);
+            this.currentVideos = videos;
+            return videos;
+        } catch (error) {
+            console.error('トレンド動画の取得に失敗しました:', error);
+            throw error;
+        }
     }
 }
 
-// コメントの取得
-async function getVideoComments(videoId) {
+// グローバルインスタンスの初期化
+const api = new InvidiousAPI();
+const videoManager = new VideoManager(api);
+
+// アプリケーションの初期化
+async function initializeApp() {
     try {
-        return await fetchAPI(`${endpoints.comments}/${videoId}`);
+        await api.init();
+        const trending = await videoManager.getTrending();
+        renderVideos(trending);
     } catch (error) {
-        console.error('コメントの取得エラー:', error);
-        return [];
+        console.error('アプリケーションの初期化に失敗しました:', error);
+        showError('サービスの初期化に失敗しました。後でもう一度お試しください。');
     }
 }
 
-// 関連動画の取得
-async function getRelatedVideos(videoId) {
-    try {
-        const video = await getVideoDetails(videoId);
-        if (!video) return [];
-        
-        // チャンネルの他の動画やタグベースでの検索
-        const searchQueries = [
-            video.author,
-            ...video.keywords || []
-        ];
-        
-        const relatedVideos = await Promise.all(
-            searchQueries.map(query => searchVideos(query))
-        );
-        
-        return relatedVideos.flat()
-            .filter(v => v.videoId !== videoId)
-            .slice(0, 12);
-    } catch (error) {
-        console.error('関連動画の取得エラー:', error);
-        return [];
-    }
+// エラー表示関数
+function showError(message) {
+    const errorContainer = document.createElement('div');
+    errorContainer.className = 'error-message';
+    errorContainer.textContent = message;
+    document.body.appendChild(errorContainer);
+    setTimeout(() => errorContainer.remove(), 5000);
 }
 
-// サムネイル取得の改善
-function getVideoThumbnailUrls(videoId) {
-    return {
-        maxres: `${currentInstance}/vi/${videoId}/maxres.jpg`,
-        hqdefault: `${currentInstance}/vi/${videoId}/hqdefault.jpg`,
-        mqdefault: `${currentInstance}/vi/${videoId}/mqdefault.jpg`,
-        sddefault: `${currentInstance}/vi/${videoId}/sddefault.jpg`,
-        default: `${currentInstance}/vi/${videoId}/default.jpg`
-    };
-}
+// 初期化の実行
+document.addEventListener('DOMContentLoaded', initializeApp);
 
 // サムネイル読み込みのエラーハンドリング
 function handleThumbnailError(img) {
@@ -204,8 +246,8 @@ function handleThumbnailError(img) {
     if (!videoId) return;
     
     // 別のインスタンスでサムネイルを試す
-    const instanceIndex = parseInt(img.dataset.retryCount) % INVIDIOUS_INSTANCES.length;
-    img.src = `${INVIDIOUS_INSTANCES[instanceIndex]}/vi/${videoId}/maxres.jpg`;
+    const instanceIndex = parseInt(img.dataset.retryCount) % api.instances.length;
+    img.src = `${api.instances[instanceIndex]}/vi/${videoId}/maxres.jpg`;
 }
 
 // 動画カードの作成
@@ -213,18 +255,18 @@ function createVideoCard(video, isRelated = false) {
     const videoCard = document.createElement('div');
     videoCard.className = 'video-card';
     
-    const thumbnails = getVideoThumbnailUrls(video.videoId);
+    const thumbnails = api.getThumbnailUrl(video.videoId);
     const duration = formatDuration(video.lengthSeconds);
     
     videoCard.innerHTML = `
         <div class="video-thumbnail">
-            <img src="${thumbnails.hqdefault}" alt="${video.title}" loading="lazy" 
+            <img src="${thumbnails}" alt="${video.title}" loading="lazy" 
                  onerror="handleThumbnailError(this)" data-video-id="${video.videoId}">
             ${duration ? `<span class="video-duration">${duration}</span>` : ''}
         </div>
         <div class="video-info">
             <div class="channel-avatar">
-                <img src="${currentInstance}/ggpht/avatar/${video.authorId}" 
+                <img src="${api.getThumbnailUrl(video.authorId)}" 
                      alt="${video.author}" 
                      onerror="this.src='https://via.placeholder.com/36'">
             </div>
@@ -254,14 +296,14 @@ async function showVideoModal(video) {
     
     try {
         showLoadingOverlay();
-        const videoDetails = await getVideoDetails(video.videoId);
+        const videoDetails = await videoManager.loadVideo(video.videoId);
         
         modalTitle.textContent = videoDetails.title;
         
         // プレーヤーのHTML
         videoPlayer.innerHTML = `
             <iframe
-                src="${currentInstance}/embed/${videoDetails.videoId}?autoplay=1"
+                src="${api.currentInstance}/embed/${videoDetails.videoId}?autoplay=1"
                 width="100%"
                 height="100%"
                 frameborder="0"
@@ -411,19 +453,150 @@ function applyFilters(videos) {
 // 動画の表示
 function renderVideos(videos) {
     const container = document.getElementById('videoContainer');
+    if (!container) return;
+
     container.innerHTML = '';
     
     if (!videos || videos.length === 0) {
-        container.innerHTML = '<p style="text-align: center; padding: 20px;">動画が見つかりませんでした。</p>';
+        container.innerHTML = '<div class="no-results">動画が見つかりませんでした。</div>';
         return;
     }
-    
+
     videos.forEach(video => {
-        container.appendChild(createVideoCard(video));
+        const card = createVideoCard(video);
+        container.appendChild(card);
     });
 }
 
-// ユーティリティ関数
+// ビデオカードの作成
+function createVideoCard(video) {
+    const card = document.createElement('div');
+    card.className = 'video-card';
+    card.dataset.videoId = video.videoId;
+
+    const thumbnailUrl = api.getThumbnailUrl(video.videoId);
+    
+    card.innerHTML = `
+        <div class="thumbnail">
+            <img src="${thumbnailUrl}" 
+                 alt="${video.title}" 
+                 onerror="this.src='/assets/thumbnail-placeholder.png'"
+                 loading="lazy">
+            <span class="duration">${formatDuration(video.lengthSeconds)}</span>
+        </div>
+        <div class="video-info">
+            <h3 class="title">${video.title}</h3>
+            <div class="meta">
+                <span class="channel">${video.author}</span>
+                <div class="stats">
+                    <span class="views">${formatViewCount(video.viewCount)}回視聴</span>
+                    <span class="date">${formatDate(video.published)}</span>
+                </div>
+            </div>
+        </div>
+    `;
+
+    card.addEventListener('click', () => {
+        handleVideoClick(video.videoId);
+    });
+
+    return card;
+}
+
+// ビデオクリックの処理
+async function handleVideoClick(videoId) {
+    try {
+        const video = await videoManager.loadVideo(videoId);
+        showVideoModal(video);
+    } catch (error) {
+        showError('動画を読み込めませんでした');
+    }
+}
+
+// ビデオモーダルの表示
+function showVideoModal(video) {
+    const modal = document.getElementById('videoModal');
+    if (!modal) return;
+
+    const player = document.getElementById('videoPlayer');
+    if (!player) return;
+
+    // プレーヤーの設定
+    player.innerHTML = `
+        <iframe
+            src="${api.currentInstance}/embed/${video.videoId}?autoplay=1"
+            width="100%"
+            height="100%"
+            frameborder="0"
+            allowfullscreen
+        ></iframe>
+    `;
+
+    // 動画情報の表示
+    const info = document.getElementById('videoInfo');
+    if (info) {
+        info.innerHTML = `
+            <h1>${video.title}</h1>
+            <div class="video-meta">
+                <div class="channel-info">
+                    <img src="${api.currentInstance}/ggpht/avatar/${video.authorId}" 
+                         alt="${video.author}"
+                         onerror="this.src='/assets/channel-placeholder.png'">
+                    <span>${video.author}</span>
+                </div>
+                <div class="stats">
+                    <span>${formatViewCount(video.viewCount)}回視聴</span>
+                    <span>${formatDate(video.published)}</span>
+                </div>
+            </div>
+            <div class="description">${formatDescription(video.description)}</div>
+        `;
+    }
+
+    modal.style.display = 'block';
+    
+    // コメントの読み込み
+    loadComments(video.videoId);
+}
+
+// コメントの読み込みと表示
+async function loadComments(videoId) {
+    const container = document.getElementById('commentsContainer');
+    if (!container) return;
+
+    try {
+        const comments = await api.getComments(videoId);
+        renderComments(comments, container);
+    } catch (error) {
+        container.innerHTML = '<div class="error">コメントを読み込めませんでした。</div>';
+    }
+}
+
+// コメントの表示
+function renderComments(comments, container) {
+    if (!comments || comments.length === 0) {
+        container.innerHTML = '<div class="no-comments">コメントはありません。</div>';
+        return;
+    }
+
+    container.innerHTML = comments.map(comment => `
+        <div class="comment">
+            <div class="comment-avatar">
+                <img src="${comment.authorThumbnails?.[0]?.url || '/assets/user-placeholder.png'}" 
+                     alt="${comment.author}">
+            </div>
+            <div class="comment-content">
+                <div class="comment-header">
+                    <span class="author">${comment.author}</span>
+                    <span class="date">${formatDate(comment.published)}</span>
+                </div>
+                <div class="comment-text">${formatComment(comment.content)}</div>
+            </div>
+        </div>
+    `).join('');
+}
+
+// フォーマット用のユーティリティ関数
 function formatDuration(seconds) {
     if (!seconds) return '0:00';
     const hours = Math.floor(seconds / 3600);
@@ -503,6 +676,21 @@ function formatPublishedTime(timestamp) {
     return `${Math.floor(diff / 31536000)}年前`;
 }
 
+function formatDescription(description) {
+    if (!description) return '';
+    return description
+        .replace(/\n/g, '<br>')
+        .replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank">$1</a>');
+}
+
+function formatComment(content) {
+    if (!content) return '';
+    return content
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\n/g, '<br>');
+}
+
 // ローディング表示の制御
 function showLoading(show) {
     const loading = document.getElementById('loading');
@@ -570,7 +758,7 @@ document.addEventListener('DOMContentLoaded', () => {
         chip.addEventListener('click', async () => {
             document.querySelector('.chip.active').classList.remove('active');
             chip.classList.add('active');
-            const videos = await getCategoryVideos(chip.textContent.toLowerCase());
+            const videos = await videoManager.getTrending({ category: chip.textContent.toLowerCase() });
             renderVideos(applyFilters(videos));
         });
     });
@@ -581,7 +769,7 @@ document.addEventListener('DOMContentLoaded', () => {
             document.querySelector('.nav-item.active').classList.remove('active');
             item.classList.add('active');
             const category = item.dataset.page;
-            const videos = await getCategoryVideos(category);
+            const videos = await videoManager.getTrending({ category });
             renderVideos(applyFilters(videos));
         });
     });
@@ -608,7 +796,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // アプリケーションの初期化
 async function init() {
     try {
-        const videos = await getCategoryVideos('trending');
+        const videos = await videoManager.getTrending();
         if (videos && videos.length > 0) {
             renderVideos(videos);
         } else {
@@ -736,8 +924,8 @@ class UserPreferences {
 
             // 複数のクエリを並行して実行
             const videos = await Promise.all([
-                ...recentQueries.map(query => searchVideos(query)),
-                ...topCategories.map(category => getCategoryVideos(category))
+                ...recentQueries.map(query => videoManager.search(query)),
+                ...topCategories.map(category => videoManager.getTrending({ category }))
             ]);
 
             // 結果を統合してスコアを計算
@@ -767,23 +955,19 @@ async function handleSearch(query) {
     if (!query) return;
     
     userPrefs.addSearchQuery(query);
-    const videos = await searchVideos(query);
+    const videos = await videoManager.search(query);
     renderVideos(videos);
 }
 
 // ページ読み込み時におすすめを表示
 window.addEventListener('DOMContentLoaded', async () => {
     try {
-        const success = await switchToWorkingInstance();
-        if (!success) {
-            alert('申し訳ありませんが、現在サービスにアクセスできません。後でもう一度お試しください。');
-        }
         const recommendations = await userPrefs.getRecommendations();
         if (recommendations.length > 0) {
             renderVideos(recommendations);
         } else {
             // 初回訪問時は人気の動画を表示
-            const trendingVideos = await getCategoryVideos('trending');
+            const trendingVideos = await videoManager.getTrending();
             renderVideos(trendingVideos);
         }
     } catch (error) {
@@ -804,7 +988,7 @@ class ShortsPlayer {
     async loadShorts() {
         try {
             // Invidiousからショート動画を取得（lengthが60秒以下の動画をフィルタリング）
-            const response = await fetch(`${currentInstance}/api/v1/trending?type=short`);
+            const response = await fetch(`${api.currentInstance}/api/v1/trending?type=short`);
             const videos = await response.json();
             this.shorts = videos.filter(video => video.lengthSeconds <= 60);
             this.playShort(0);
@@ -853,7 +1037,7 @@ class ShortsPlayer {
         // 動画プレーヤーの更新
         this.container.innerHTML = `
             <iframe
-                src="${currentInstance}/embed/${short.videoId}?autoplay=1&loop=1"
+                src="${api.currentInstance}/embed/${short.videoId}?autoplay=1&loop=1"
                 width="100%"
                 height="100%"
                 frameborder="0"
@@ -900,7 +1084,7 @@ class ShortsPlayer {
         if (!short) return;
 
         try {
-            const response = await fetch(`${currentInstance}/api/v1/comments/${short.videoId}`);
+            const response = await fetch(`${api.currentInstance}/api/v1/comments/${short.videoId}`);
             const comments = await response.json();
             this.displayComments(comments);
         } catch (error) {
@@ -1007,7 +1191,7 @@ class Router {
 
         showLoadingOverlay();
         try {
-            const video = await getVideoDetails(videoId);
+            const video = await videoManager.loadVideo(videoId);
             await showVideoModal(video);
             document.title = `${video.title} - ようつべ`;
         } catch (error) {
@@ -1042,7 +1226,7 @@ class Router {
         
         showLoadingOverlay();
         try {
-            const results = await searchVideos(query);
+            const results = await videoManager.search(query);
             displayVideos(results);
             document.title = `${query} - ようつべ`;
         } catch (error) {
@@ -1078,7 +1262,7 @@ function createVideoCard(video) {
     card.className = 'video-card';
     card.innerHTML = `
         <div class="thumbnail-wrapper">
-            <img class="thumbnail" src="${currentInstance}/vi/${video.videoId}/maxres.jpg" 
+            <img class="thumbnail" src="${api.getThumbnailUrl(video.videoId)}" 
                  onerror="handleThumbnailError(this)" data-video-id="${video.videoId}"
                  alt="${video.title}">
             <span class="video-duration">${formatDuration(video.lengthSeconds)}</span>
