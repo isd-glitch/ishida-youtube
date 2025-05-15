@@ -158,62 +158,105 @@
             <div class="modal-body">
                 <div class="video-player-container">
                     <div id="videoPlayer"></div>
-                    <div class="video-info-section">
-                        <div class="video-primary-info">
-                            <div class="video-title-container">
-                                <h1 class="video-title"></h1>
-                                <div class="video-meta-stats"></div>
-                            </div>
-                            <div class="video-actions">
-                                <button class="action-button like-button">
-                                    <i class="fas fa-thumbs-up"></i>
-                                    <span class="like-count">0</span>
-                                </button>
-                                <button class="action-button dislike-button">
-                                    <i class="fas fa-thumbs-down"></i>
-                                </button>
-                                <button class="action-button share-button">
-                                    <i class="fas fa-share"></i>
-                                    <span>共有</span>
-                                </button>
-                                <button class="action-button save-button">
-                                    <i class="fas fa-folder-plus"></i>
-                                    <span>保存</span>
-                                </button>
+                    <div class="video-controls">
+                        <div class="quality-selector">
+                            <button class="quality-button">
+                                <i class="fas fa-cog"></i>
+                                画質
+                            </button>
+                            <div class="quality-menu">
+                                <button data-quality="auto">自動</button>
+                                <button data-quality="1080">1080p</button>
+                                <button data-quality="720">720p</button>
+                                <button data-quality="480">480p</button>
+                                <button data-quality="360">360p</button>
                             </div>
                         </div>
-                        
-                        <div class="video-secondary-info">
-                            <div class="channel-info">
-                                <div class="channel-avatar">
-                                    <img src="" alt="">
-                                </div>
-                                <div class="channel-details">
-                                    <h3 class="channel-name"></h3>
-                                    <span class="subscriber-count"></span>
-                                </div>
-                                <button class="subscribe-button">登録</button>
+                        <div class="playback-controls">
+                            <button class="speed-button" title="再生速度">
+                                <i class="fas fa-tachometer-alt"></i>
+                            </button>
+                            <div class="speed-menu">
+                                <button data-speed="0.25">0.25x</button>
+                                <button data-speed="0.5">0.5x</button>
+                                <button data-speed="1" class="active">標準</button>
+                                <button data-speed="1.5">1.5x</button>
+                                <button data-speed="2">2x</button>
                             </div>
-                            <div class="video-description"></div>
                         </div>
-                    </div>
-                    
-                    <div class="comments-section">
-                        <div class="comments-header">
-                            <h3>コメント</h3>
-                            <button class="sort-comments">
-                                <i class="fas fa-sort"></i>
-                                並び替え
+                        <div class="video-actions">
+                            <button class="download-button" title="ダウンロード">
+                                <i class="fas fa-download"></i>
+                            </button>
+                            <button class="pip-button" title="ピクチャーインピクチャー">
+                                <i class="fas fa-external-link-alt"></i>
                             </button>
                         </div>
-                        <div class="add-comment">
-                            <div class="user-avatar">
-                                <i class="fas fa-user-circle"></i>
-                            </div>
-                            <input type="text" placeholder="コメントを追加...">
-                        </div>
-                        <div id="comments-container"></div>
                     </div>
+                </div>
+                
+                <div class="video-info-section">
+                    <div class="video-primary-info">
+                        <div class="video-title-container">
+                            <h1 class="video-title"></h1>
+                            <div class="video-meta-stats"></div>
+                        </div>
+                        <div class="video-actions">
+                            <button class="action-button like-button">
+                                <i class="fas fa-thumbs-up"></i>
+                                <span class="like-count">0</span>
+                            </button>
+                            <button class="action-button dislike-button">
+                                <i class="fas fa-thumbs-down"></i>
+                            </button>
+                            <button class="action-button share-button">
+                                <i class="fas fa-share"></i>
+                                <span>共有</span>
+                            </button>
+                            <button class="action-button save-button">
+                                <i class="fas fa-folder-plus"></i>
+                                <span>保存</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="download-options" style="display: none;">
+                        <h3>ダウンロードオプション</h3>
+                        <div class="download-formats">
+                            <!-- ダウンロードオプションがここに動的に追加されます -->
+                        </div>
+                    </div>
+
+                    <div class="video-secondary-info">
+                        <div class="channel-info">
+                            <div class="channel-avatar">
+                                <img src="" alt="">
+                            </div>
+                            <div class="channel-details">
+                                <h3 class="channel-name"></h3>
+                                <span class="subscriber-count"></span>
+                            </div>
+                            <button class="subscribe-button">登録</button>
+                        </div>
+                        <div class="video-description"></div>
+                    </div>
+                </div>
+                
+                <div class="comments-section">
+                    <div class="comments-header">
+                        <h3>コメント</h3>
+                        <button class="sort-comments">
+                            <i class="fas fa-sort"></i>
+                            並び替え
+                        </button>
+                    </div>
+                    <div class="add-comment">
+                        <div class="user-avatar">
+                            <i class="fas fa-user-circle"></i>
+                        </div>
+                        <input type="text" placeholder="コメントを追加...">
+                    </div>
+                    <div id="comments-container"></div>
                 </div>
                 
                 <div class="related-videos">

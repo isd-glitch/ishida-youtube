@@ -580,3 +580,169 @@ header {
         grid-template-columns: 1fr;
     }
 }
+
+/* 動画プレーヤーのスタイル */
+.video-player-container {
+    position: relative;
+    width: 100%;
+    background: #000;
+}
+
+.video-controls {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(0, 0, 0, 0.7);
+    padding: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: opacity 0.3s;
+}
+
+.video-player-container:not(:hover) .video-controls {
+    opacity: 0;
+}
+
+.quality-selector,
+.playback-controls,
+.video-actions {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.quality-button,
+.speed-button,
+.download-button,
+.pip-button {
+    background: transparent;
+    border: none;
+    color: white;
+    padding: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 14px;
+}
+
+.quality-button:hover,
+.speed-button:hover,
+.download-button:hover,
+.pip-button:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+}
+
+.quality-menu,
+.speed-menu {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    background: rgba(28, 28, 28, 0.9);
+    border-radius: 4px;
+    padding: 8px 0;
+    display: none;
+    flex-direction: column;
+    min-width: 150px;
+}
+
+.quality-selector:hover .quality-menu,
+.playback-controls:hover .speed-menu {
+    display: flex;
+}
+
+.quality-menu button,
+.speed-menu button {
+    background: transparent;
+    border: none;
+    color: white;
+    padding: 8px 16px;
+    text-align: left;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.quality-menu button:hover,
+.speed-menu button:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.speed-menu button.active {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.download-options {
+    background: #f9f9f9;
+    border-radius: 8px;
+    padding: 16px;
+    margin-top: 16px;
+}
+
+.download-options h3 {
+    margin: 0 0 12px 0;
+    font-size: 16px;
+}
+
+.download-formats {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 8px;
+}
+
+.download-format-button {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 8px 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s;
+}
+
+.download-format-button:hover {
+    background: #f0f0f0;
+    border-color: #ccc;
+}
+
+/* ピクチャーインピクチャーモード */
+.pip-active {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 320px;
+    height: 180px;
+    z-index: 9999;
+}
+
+/* モーダルのスタイル更新 */
+.modal-content {
+    background-color: #fff;
+    margin: 0 auto;
+    padding: 0;
+    border-radius: 8px;
+    max-width: 1280px;
+    width: 95%;
+    height: 90vh;
+    overflow-y: auto;
+}
+
+.modal-header {
+    padding: 16px;
+    border-bottom: 1px solid #ddd;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-body {
+    padding: 0;
+}
+
+.video-info-section {
+    padding: 16px;
+}

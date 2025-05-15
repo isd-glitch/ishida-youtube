@@ -1,9 +1,9 @@
 const INSTANCES = [
-    'https://invidious.projectsegfau.lt',
-    'https://invidious.slipfox.xyz',
-    'https://iv.melmac.space',
-    'https://invidious.privacydev.net',
-    'https://vid.puffyan.us'
+    'https://y.com.sb',
+    'https://invidious.nerdvpn.de',
+    'https://inv.vern.cc',
+    'https://invidious.protokolla.fi',
+    'https://yt.artemislena.eu'
 ];
 
 let currentInstance = INSTANCES[0];
@@ -48,28 +48,24 @@ async function findWorkingInstance() {
 
 // API呼び出し
 async function fetchAPI(endpoint, params = {}) {
-    const queryString = new URLSearchParams({
-        region: 'JP',
-        ...params
-    }).toString();
-    
     try {
-        const response = await fetch(`${currentInstance}${endpoint}?${queryString}`);
+        const queryString = new URLSearchParams({
+            ...params
+        }).toString();
+        
+        const response = await fetch(`${currentInstance}${endpoint}${queryString ? '?' + queryString : ''}`);
         if (!response.ok) throw new Error('API request failed');
-        const data = await response.json();
-        if (Array.isArray(data) || data.videoId) {
-            return data;
-        }
-        throw new Error('Invalid response format');
+        return await response.json();
     } catch (error) {
         console.error('API Error:', error);
+        // 別のインスタンスを試す
         const currentIndex = INSTANCES.indexOf(currentInstance);
         if (currentIndex < INSTANCES.length - 1) {
             currentInstance = INSTANCES[currentIndex + 1];
             console.log('Switching to instance:', currentInstance);
             return fetchAPI(endpoint, params);
         }
-        return null;
+        throw error;
     }
 }
 
@@ -77,39 +73,47 @@ async function fetchAPI(endpoint, params = {}) {
 async function searchVideos(query) {
     showLoading(true);
     try {
-        const videos = await fetchAPI(endpoints.search, {
+        const videos = await fetchAPI('/api/v1/search', {
             q: query,
-            ...currentFilters
+            type: 'video',
+            region: 'JP'
         });
-        currentVideos = videos || [];
-        return videos;
+        return Array.isArray(videos) ? videos : [];
+    } catch (error) {
+        console.error('検索エラー:', error);
+        return [];
     } finally {
         showLoading(false);
     }
 }
 
 // カテゴリー別の動画取得
-async function getCategoryVideos(category, type = '') {
+async function getCategoryVideos(category) {
     showLoading(true);
     try {
-        let endpoint = endpoints.trending;
-        const params = {};
+        let endpoint = '/api/v1/trending';
+        const params = { region: 'JP' };
         
         switch (category) {
-            case 'popular':
-                endpoint = endpoints.popular;
-                break;
             case 'music':
+                params.type = 'Music';
+                break;
             case 'gaming':
+                params.type = 'Gaming';
+                break;
             case 'news':
+                params.type = 'News';
+                break;
             case 'sports':
-                params.type = category;
+                params.type = 'Sports';
                 break;
         }
         
         const videos = await fetchAPI(endpoint, params);
-        currentVideos = videos || [];
-        return videos;
+        return Array.isArray(videos) ? videos : [];
+    } catch (error) {
+        console.error('カテゴリー動画の取得エラー:', error);
+        return [];
     } finally {
         showLoading(false);
     }
@@ -118,9 +122,13 @@ async function getCategoryVideos(category, type = '') {
 // 動画の詳細情報を取得
 async function getVideoDetails(videoId) {
     try {
-        return await fetchAPI(`${endpoints.video}/${videoId}`);
+        const response = await fetch(`${currentInstance}/api/v1/videos/${videoId}`);
+        if (!response.ok) {
+            throw new Error('動画の詳細を取得できませんでした');
+        }
+        return await response.json();
     } catch (error) {
-        console.error('動画詳細の取得エラー:', error);
+        console.error('動画の詳細の取得中にエラーが発生しました:', error);
         return null;
     }
 }
@@ -160,36 +168,31 @@ async function getRelatedVideos(videoId) {
     }
 }
 
+// 動画のサムネイルURLを取得
+function getThumbnailUrl(video) {
+    if (!video || !video.videoId) return '';
+    return `${currentInstance}/vi/${video.videoId}/maxresdefault.jpg`;
+}
+
 // 動画カードの作成
 function createVideoCard(video, isRelated = false) {
     const videoCard = document.createElement('div');
     videoCard.className = 'video-card';
     
-    // サムネイルURLの修正
-    const thumbnail = video.videoThumbnails?.find(t => 
-        t.quality === 'medium' && t.url && !t.url.includes('undefined')
-    )?.url;
-    
-    const defaultThumbnail = `${currentInstance}/vi/${video.videoId}/mqdefault.jpg`;
-    const thumbnailUrl = thumbnail || defaultThumbnail;
-    
-    // チャンネルアイコンURLの修正
-    const authorThumbnail = video.authorThumbnails?.[0]?.url;
-    const defaultAuthorThumbnail = 'https://via.placeholder.com/36';
-    const authorThumbnailUrl = authorThumbnail 
-        ? (authorThumbnail.startsWith('http') ? authorThumbnail : `${currentInstance}${authorThumbnail}`)
-        : defaultAuthorThumbnail;
-    
+    const thumbnailUrl = getThumbnailUrl(video);
     const duration = formatDuration(video.lengthSeconds);
     
     videoCard.innerHTML = `
         <div class="video-thumbnail">
-            <img src="${thumbnailUrl}" alt="${video.title}" loading="lazy" onerror="this.src='${defaultThumbnail}'">
+            <img src="${thumbnailUrl}" alt="${video.title}" loading="lazy" 
+                 onerror="this.src='${currentInstance}/vi/${video.videoId}/mqdefault.jpg'">
             ${duration ? `<span class="video-duration">${duration}</span>` : ''}
         </div>
         <div class="video-info">
             <div class="channel-avatar">
-                <img src="${authorThumbnailUrl}" alt="${video.author}" onerror="this.src='${defaultAuthorThumbnail}'">
+                <img src="${currentInstance}/ggpht/avatar/${video.authorId}" 
+                     alt="${video.author}" 
+                     onerror="this.src='https://via.placeholder.com/36'">
             </div>
             <div class="video-details">
                 <h3 class="video-title">${video.title}</h3>
@@ -218,11 +221,118 @@ async function showVideoModal(video) {
     
     // 動画プレーヤーの設定
     modalTitle.textContent = video.title;
-    videoPlayer.innerHTML = `
-        <iframe src="${currentInstance}/embed/${video.videoId}?autoplay=1"
-                allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
-                allowfullscreen></iframe>
+    
+    // プレーヤーコントロールを含むコンテナを作成
+    const playerContainer = document.createElement('div');
+    playerContainer.className = 'player-container';
+    
+    // 動画の利用可能なフォーマットを取得
+    const formats = videoDetails.formatStreams || [];
+    const audioFormats = videoDetails.adaptiveFormats?.filter(f => f.type.startsWith('audio/')) || [];
+    
+    // プレーヤーのHTML構造
+    playerContainer.innerHTML = `
+        <div class="video-wrapper">
+            <iframe src="${currentInstance}/embed/${video.videoId}?quality=hd720"
+                    id="videoFrame"
+                    allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
+                    allowfullscreen></iframe>
+        </div>
+        <div class="player-controls">
+            <div class="quality-control">
+                <select id="qualitySelect">
+                    ${formats.map(format => `
+                        <option value="${format.itag}" 
+                                data-url="${format.url}"
+                                ${format.qualityLabel === '720p' ? 'selected' : ''}>
+                            ${format.qualityLabel}
+                        </option>
+                    `).join('')}
+                </select>
+            </div>
+            <div class="playback-control">
+                <select id="playbackSpeed">
+                    <option value="0.25">0.25x</option>
+                    <option value="0.5">0.5x</option>
+                    <option value="0.75">0.75x</option>
+                    <option value="1" selected>1x</option>
+                    <option value="1.25">1.25x</option>
+                    <option value="1.5">1.5x</option>
+                    <option value="2">2x</option>
+                </select>
+            </div>
+            <div class="download-control">
+                <select id="downloadFormat">
+                    <option value="">動画をダウンロード...</option>
+                    ${formats.map(format => `
+                        <option value="${format.url}" data-quality="${format.qualityLabel}">
+                            ${format.qualityLabel} (${format.container})
+                        </option>
+                    `).join('')}
+                    ${audioFormats.map(format => `
+                        <option value="${format.url}">
+                            音声のみ (${format.container})
+                        </option>
+                    `).join('')}
+                </select>
+            </div>
+            <button id="pipButton" title="ピクチャーインピクチャーモード">
+                <i class="fas fa-external-link-alt"></i>
+            </button>
+        </div>
     `;
+    
+    videoPlayer.innerHTML = '';
+    videoPlayer.appendChild(playerContainer);
+    
+    // イベントリスナーの設定
+    const qualitySelect = document.getElementById('qualitySelect');
+    const playbackSpeed = document.getElementById('playbackSpeed');
+    const downloadFormat = document.getElementById('downloadFormat');
+    const pipButton = document.getElementById('pipButton');
+    const videoFrame = document.getElementById('videoFrame');
+    
+    qualitySelect.addEventListener('change', (e) => {
+        const selectedOption = e.target.options[e.target.selectedIndex];
+        const url = selectedOption.dataset.url;
+        videoFrame.src = `${currentInstance}/embed/${video.videoId}?quality=${e.target.value}`;
+    });
+    
+    playbackSpeed.addEventListener('change', (e) => {
+        const speed = e.target.value;
+        videoFrame.contentWindow.postMessage(
+            { type: 'setPlaybackSpeed', speed: parseFloat(speed) },
+            '*'
+        );
+    });
+    
+    downloadFormat.addEventListener('change', async (e) => {
+        const url = e.target.value;
+        if (!url) return;
+        
+        const quality = e.target.options[e.target.selectedIndex].dataset.quality;
+        const ext = url.split('.').pop().split('?')[0];
+        const filename = `${video.title}-${quality || 'audio'}.${ext}`;
+        
+        // ダウンロードリンクを作成
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        
+        // 選択をリセット
+        e.target.value = '';
+    });
+    
+    pipButton.addEventListener('click', () => {
+        if (document.pictureInPictureElement) {
+            document.exitPictureInPicture();
+        } else if (document.pictureInPictureEnabled) {
+            videoFrame.requestPictureInPicture();
+        }
+    });
     
     // 動画情報の表示
     document.querySelector('.video-title').textContent = video.title;
@@ -511,10 +621,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // アプリケーションの初期化
 async function init() {
-    if (await findWorkingInstance()) {
+    try {
         const videos = await getCategoryVideos('trending');
-        renderVideos(applyFilters(videos));
-    } else {
-        alert('申し訳ありませんが、現在利用可能なサーバーが見つかりません。');
+        if (videos && videos.length > 0) {
+            renderVideos(videos);
+        } else {
+            document.getElementById('videoContainer').innerHTML = 
+                '<p style="text-align: center; padding: 20px;">動画を読み込めませんでした。</p>';
+        }
+    } catch (error) {
+        console.error('初期化エラー:', error);
+        document.getElementById('videoContainer').innerHTML = 
+            '<p style="text-align: center; padding: 20px;">サーバーに接続できません。</p>';
     }
 }
