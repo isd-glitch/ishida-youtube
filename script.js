@@ -43,43 +43,53 @@ async function switchToWorkingInstance() {
     return false;
 }
 
-// API呼び出しの改善
+// APIエンドポイント関数の改善
 async function fetchAPI(endpoint, params = {}) {
-    for (let i = 0; i < INVIDIOUS_INSTANCES.length; i++) {
+    let currentInstanceIndex = INVIDIOUS_INSTANCES.indexOf(currentInstance);
+    let attempts = 0;
+
+    while (attempts < INVIDIOUS_INSTANCES.length) {
         try {
-            const instance = INVIDIOUS_INSTANCES[i];
             const queryString = new URLSearchParams(params).toString();
-            const url = `${instance}${endpoint}${queryString ? '?' + queryString : ''}`;
-            
+            const url = `${currentInstance}${endpoint}${queryString ? '?' + queryString : ''}`;
             const response = await fetch(url);
+            
             if (!response.ok) throw new Error('API request failed');
             
-            currentInstance = instance; // 成功したインスタンスを記録
-            return await response.json();
+            const data = await response.json();
+            return data;
         } catch (error) {
-            console.error(`インスタンス ${INVIDIOUS_INSTANCES[i]} でエラー:`, error);
-            if (i === INVIDIOUS_INSTANCES.length - 1) {
-                throw error; // 全てのインスタンスで失敗
-            }
+            console.error(`Instance ${currentInstance} failed:`, error);
+            currentInstanceIndex = (currentInstanceIndex + 1) % INVIDIOUS_INSTANCES.length;
+            currentInstance = INVIDIOUS_INSTANCES[currentInstanceIndex];
+            attempts++;
         }
     }
+    throw new Error('すべてのインスタンスでリクエストが失敗しました');
 }
 
-// 検索機能の改善
+// 検索機能の強化
 async function searchVideos(query, params = {}) {
+    showLoadingOverlay();
     try {
         const searchParams = {
             q: query,
+            page: params.page || 1,
+            sort_by: params.sort || 'relevance',
+            date: params.date || '',
+            duration: params.duration || '',
+            type: params.type || 'video',
             region: 'JP',
-            type: 'video',
             ...params
         };
-        
+
         const results = await fetchAPI('/api/v1/search', searchParams);
         return Array.isArray(results) ? results : [];
     } catch (error) {
         console.error('検索エラー:', error);
         return [];
+    } finally {
+        hideLoadingOverlay();
     }
 }
 
@@ -115,14 +125,18 @@ async function getCategoryVideos(category) {
     }
 }
 
-// 動画の詳細情報を取得
+// 動画の詳細情報を取得する関数の改善
 async function getVideoDetails(videoId) {
     try {
-        const response = await fetch(`${currentInstance}/api/v1/videos/${videoId}`);
-        if (!response.ok) {
-            throw new Error('動画の取得に失敗しました');
+        const data = await fetchAPI(`/api/v1/videos/${videoId}`);
+        if (!data) throw new Error('動画データが取得できません');
+
+        // タイムスタンプの修正
+        if (data.published) {
+            data.publishedText = formatPublishedTime(data.published);
         }
-        return await response.json();
+
+        return data;
     } catch (error) {
         console.error('動画データの取得エラー:', error);
         throw error;
@@ -165,129 +179,14 @@ async function getRelatedVideos(videoId) {
 }
 
 // サムネイル取得の改善
-function getVideoThumbnail(videoId, quality = 'maxresdefault') {
-    const qualities = ['maxresdefault', 'sddefault', 'hqdefault', 'mqdefault', 'default'];
-    const img = document.createElement('img');
-    let currentQualityIndex = qualities.indexOf(quality);
-
-    return new Promise((resolve) => {
-        img.onload = () => {
-            // 画像が正常にロードされた場合
-            if (img.naturalWidth > 120) {
-                resolve(img.src);
-            } else if (currentQualityIndex < qualities.length - 1) {
-                // 次の品質を試す
-                currentQualityIndex++;
-                img.src = `${currentInstance}/vi/${videoId}/${qualities[currentQualityIndex]}.jpg`;
-            } else {
-                // デフォルトのサムネイルを使用
-                resolve(`${currentInstance}/vi/${videoId}/hqdefault.jpg`);
-            }
-        };
-
-        img.onerror = () => {
-            if (currentQualityIndex < qualities.length - 1) {
-                // エラーの場合、次の品質を試す
-                currentQualityIndex++;
-                img.src = `${currentInstance}/vi/${videoId}/${qualities[currentQualityIndex]}.jpg`;
-            } else {
-                // デフォルトのサムネイルを使用
-                resolve(`${currentInstance}/vi/${videoId}/hqdefault.jpg`);
-            }
-        };
-
-        img.src = `${currentInstance}/vi/${videoId}/${quality}.jpg`;
-    });
-}
-
-// 動画カードの生成を改善
-async function createVideoCard(video) {
-    const card = document.createElement('div');
-    card.className = 'video-card';
-    
-    // サムネイルを非同期で取得
-    const thumbnailUrl = await getVideoThumbnail(video.videoId);
-    
-    card.innerHTML = `
-        <div class="thumbnail-wrapper">
-            <img class="thumbnail" 
-                 src="${thumbnailUrl}" 
-                 alt="${video.title}"
-                 loading="lazy">
-            <span class="video-duration">${formatDuration(video.lengthSeconds)}</span>
-        </div>
-        <div class="video-info">
-            <div class="channel-avatar">
-                <img src="${video.authorThumbnails?.[0]?.url || ''}" 
-                     alt="${video.author}"
-                     onerror="this.src='https://via.placeholder.com/36'">
-            </div>
-            <div class="video-details">
-                <h3 class="video-title">${video.title}</h3>
-                <p class="channel-name">${video.author}</p>
-                <div class="video-meta">
-                    <span>${formatViewCount(video.viewCount)}回視聴</span>
-                    <span>•</span>
-                    <span>${formatPublishedDate(video.published)}</span>
-                </div>
-            </div>
-        </div>
-    `;
-
-    card.addEventListener('click', () => {
-        router.navigate(`${window.location.origin}/watch`, { v: video.videoId });
-    });
-
-    return card;
-}
-
-// 動画モーダルの表示
-async function showVideoModal(video) {
-    const modal = document.getElementById('videoModal');
-    const modalTitle = document.getElementById('modalTitle');
-    const videoPlayer = document.getElementById('videoPlayer');
-    
-    try {
-        showLoadingOverlay();
-        const videoDetails = await getVideoDetails(video.videoId);
-        
-        modalTitle.textContent = video.title;
-        document.title = `${video.title} - ようつべ`;
-
-        // プレーヤーの設定
-        videoPlayer.innerHTML = `
-            <iframe
-                src="${currentInstance}/embed/${video.videoId}?autoplay=1"
-                width="100%"
-                height="100%"
-                frameborder="0"
-                allowfullscreen
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            ></iframe>
-        `;
-
-        // 動画情報の更新
-        updateVideoInfo(video, videoDetails);
-        
-        // コメントと関連動画の読み込み
-        await Promise.all([
-            loadComments(video.videoId),
-            loadRelatedVideos(video.videoId)
-        ]);
-
-        modal.style.display = 'block';
-    } catch (error) {
-        console.error('動画の読み込みに失敗しました:', error);
-        alert('動画を読み込めませんでした。');
-    } finally {
-        hideLoadingOverlay();
-    }
-}
-
-// 動画のサムネイルURLを取得
-function getThumbnailUrl(video) {
-    if (!video || !video.videoId) return '';
-    return `${currentInstance}/vi/${video.videoId}/maxresdefault.jpg`;
+function getVideoThumbnailUrls(videoId) {
+    return {
+        maxres: `${currentInstance}/vi/${videoId}/maxres.jpg`,
+        hqdefault: `${currentInstance}/vi/${videoId}/hqdefault.jpg`,
+        mqdefault: `${currentInstance}/vi/${videoId}/mqdefault.jpg`,
+        sddefault: `${currentInstance}/vi/${videoId}/sddefault.jpg`,
+        default: `${currentInstance}/vi/${videoId}/default.jpg`
+    };
 }
 
 // 動画カードの作成
@@ -295,13 +194,13 @@ function createVideoCard(video, isRelated = false) {
     const videoCard = document.createElement('div');
     videoCard.className = 'video-card';
     
-    const thumbnailUrl = getThumbnailUrl(video);
+    const thumbnails = getVideoThumbnailUrls(video.videoId);
     const duration = formatDuration(video.lengthSeconds);
     
     videoCard.innerHTML = `
         <div class="video-thumbnail">
-            <img src="${thumbnailUrl}" alt="${video.title}" loading="lazy" 
-                 onerror="this.src='${currentInstance}/vi/${video.videoId}/mqdefault.jpg'">
+            <img src="${thumbnails.hqdefault}" alt="${video.title}" loading="lazy" 
+                 onerror="this.src='${thumbnails.mqdefault}'">
             ${duration ? `<span class="video-duration">${duration}</span>` : ''}
         </div>
         <div class="video-info">
@@ -333,158 +232,60 @@ async function showVideoModal(video) {
     const modal = document.getElementById('videoModal');
     const modalTitle = document.getElementById('modalTitle');
     const videoPlayer = document.getElementById('videoPlayer');
-    const videoDetails = await getVideoDetails(video.videoId);
     
-    // 動画プレーヤーの設定
-    modalTitle.textContent = video.title;
-    
-    // プレーヤーコントロールを含むコンテナを作成
-    const playerContainer = document.createElement('div');
-    playerContainer.className = 'player-container';
-    
-    // 動画の利用可能なフォーマットを取得
-    const formats = videoDetails.formatStreams || [];
-    const audioFormats = videoDetails.adaptiveFormats?.filter(f => f.type.startsWith('audio/')) || [];
-    
-    // プレーヤーのHTML構造
-    playerContainer.innerHTML = `
-        <div class="video-wrapper">
-            <iframe src="${currentInstance}/embed/${video.videoId}?quality=hd720"
-                    id="videoFrame"
-                    allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
-                    allowfullscreen></iframe>
-        </div>
-        <div class="player-controls">
-            <div class="quality-control">
-                <select id="qualitySelect">
-                    ${formats.map(format => `
-                        <option value="${format.itag}" 
-                                data-url="${format.url}"
-                                ${format.qualityLabel === '720p' ? 'selected' : ''}>
-                            ${format.qualityLabel}
-                        </option>
-                    `).join('')}
-                </select>
-            </div>
-            <div class="playback-control">
-                <select id="playbackSpeed">
-                    <option value="0.25">0.25x</option>
-                    <option value="0.5">0.5x</option>
-                    <option value="0.75">0.75x</option>
-                    <option value="1" selected>1x</option>
-                    <option value="1.25">1.25x</option>
-                    <option value="1.5">1.5x</option>
-                    <option value="2">2x</option>
-                </select>
-            </div>
-            <div class="download-control">
-                <select id="downloadFormat">
-                    <option value="">動画をダウンロード...</option>
-                    ${formats.map(format => `
-                        <option value="${format.url}" data-quality="${format.qualityLabel}">
-                            ${format.qualityLabel} (${format.container})
-                        </option>
-                    `).join('')}
-                    ${audioFormats.map(format => `
-                        <option value="${format.url}">
-                            音声のみ (${format.container})
-                        </option>
-                    `).join('')}
-                </select>
-            </div>
-            <button id="pipButton" title="ピクチャーインピクチャーモード">
-                <i class="fas fa-external-link-alt"></i>
-            </button>
-        </div>
-    `;
-    
-    videoPlayer.innerHTML = '';
-    videoPlayer.appendChild(playerContainer);
-    
-    // イベントリスナーの設定
-    const qualitySelect = document.getElementById('qualitySelect');
-    const playbackSpeed = document.getElementById('playbackSpeed');
-    const downloadFormat = document.getElementById('downloadFormat');
-    const pipButton = document.getElementById('pipButton');
-    const videoFrame = document.getElementById('videoFrame');
-    
-    qualitySelect.addEventListener('change', (e) => {
-        const selectedOption = e.target.options[e.target.selectedIndex];
-        const url = selectedOption.dataset.url;
-        videoFrame.src = `${currentInstance}/embed/${video.videoId}?quality=${e.target.value}`;
-    });
-    
-    playbackSpeed.addEventListener('change', (e) => {
-        const speed = e.target.value;
-        videoFrame.contentWindow.postMessage(
-            { type: 'setPlaybackSpeed', speed: parseFloat(speed) },
-            '*'
-        );
-    });
-    
-    downloadFormat.addEventListener('change', async (e) => {
-        const url = e.target.value;
-        if (!url) return;
+    try {
+        showLoadingOverlay();
+        const videoDetails = await getVideoDetails(video.videoId);
         
-        const quality = e.target.options[e.target.selectedIndex].dataset.quality;
-        const ext = url.split('.').pop().split('?')[0];
-        const filename = `${video.title}-${quality || 'audio'}.${ext}`;
+        modalTitle.textContent = videoDetails.title;
         
-        // ダウンロードリンクを作成
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+        // プレーヤーのHTML
+        videoPlayer.innerHTML = `
+            <iframe
+                src="${currentInstance}/embed/${videoDetails.videoId}?autoplay=1"
+                width="100%"
+                height="100%"
+                frameborder="0"
+                allowfullscreen
+                allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
+            ></iframe>
+        `;
+
+        // 動画情報の更新
+        updateVideoInfo(videoDetails);
         
-        // 選択をリセット
-        e.target.value = '';
-    });
-    
-    pipButton.addEventListener('click', () => {
-        if (document.pictureInPictureElement) {
-            document.exitPictureInPicture();
-        } else if (document.pictureInPictureEnabled) {
-            videoFrame.requestPictureInPicture();
-        }
-    });
-    
-    // 動画情報の表示
-    document.querySelector('.video-title').textContent = video.title;
+        modal.style.display = 'block';
+        document.title = `${videoDetails.title} - ようつべ`;
+    } catch (error) {
+        console.error('動画の読み込みエラー:', error);
+        alert('動画を読み込めませんでした。');
+    } finally {
+        hideLoadingOverlay();
+    }
+}
+
+// 動画情報の更新関数
+function updateVideoInfo(videoDetails) {
+    document.querySelector('.video-title').textContent = videoDetails.title;
     document.querySelector('.video-meta-stats').innerHTML = `
-        ${formatViewCount(video.viewCount)} 回視聴 • ${formatPublishedTime(video.publishedText)}
+        ${formatViewCount(videoDetails.viewCount)}回視聴 • 
+        ${formatPublishedTime(videoDetails.published)}
     `;
     
-    // チャンネル情報の表示
+    // チャンネル情報
     const channelAvatar = document.querySelector('.channel-info .channel-avatar img');
     const channelName = document.querySelector('.channel-info .channel-name');
     const subscriberCount = document.querySelector('.channel-info .subscriber-count');
     
-    channelAvatar.src = `${currentInstance}/ggpht${video.authorThumbnails?.[0]?.url?.split('ggpht')[1] || ''}`;
-    channelName.textContent = video.author;
-    subscriberCount.textContent = videoDetails?.subCountText || '';
+    if (videoDetails.authorThumbnails?.length > 0) {
+        channelAvatar.src = videoDetails.authorThumbnails[0].url;
+    }
+    channelName.textContent = videoDetails.author;
+    subscriberCount.textContent = videoDetails.subCountText || '';
     
     // 動画の説明
     document.querySelector('.video-description').innerHTML = 
-        video.description?.replace(/\n/g, '<br>') || '説明はありません。';
-    
-    // コメントの読み込み
-    const comments = await getVideoComments(video.videoId);
-    renderComments(comments);
-    
-    // 関連動画の読み込み
-    const relatedVideos = await getRelatedVideos(video.videoId);
-    renderRelatedVideos(relatedVideos);
-    
-    // 視聴履歴に追加
-    userPrefs.addToWatchHistory(video);
-    
-    // 関連動画の取得と表示を更新
-    const recommendations = await userPrefs.getRecommendations();
-    renderRelatedVideos(recommendations);
-    
-    modal.style.display = 'block';
+        videoDetails.description?.replace(/\n/g, '<br>') || '説明はありません。';
 }
 
 // コメントの表示
@@ -667,8 +468,20 @@ function formatCount(count) {
     return count.toString();
 }
 
-function formatPublishedTime(publishedText) {
-    return publishedText || '';
+function formatPublishedTime(timestamp) {
+    if (!timestamp) return '';
+    
+    const date = new Date(timestamp * 1000);
+    const now = new Date();
+    const diff = Math.floor((now - date) / 1000);
+    
+    if (diff < 60) return '数秒前';
+    if (diff < 3600) return `${Math.floor(diff / 60)}分前`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}時間前`;
+    if (diff < 2592000) return `${Math.floor(diff / 86400)}日前`;
+    if (diff < 31536000) return `${Math.floor(diff / 2592000)}ヶ月前`;
+    
+    return `${Math.floor(diff / 31536000)}年前`;
 }
 
 // ローディング表示の制御
@@ -771,8 +584,6 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // アプリケーションの初期化
     init();
-    setupSearchForm();
-    setupFilters();
 });
 
 // アプリケーションの初期化
@@ -1305,127 +1116,4 @@ const router = new Router();
 // 初期ルートの処理
 document.addEventListener('DOMContentLoaded', () => {
     router.handleRoute();
-});
-
-// 検索フォームのイベントハンドラ
-function setupSearchForm() {
-    const searchForm = document.querySelector('.search-form');
-    const searchInput = document.getElementById('search');
-    const searchSuggestions = document.getElementById('searchSuggestions');
-    let debounceTimeout;
-
-    // 検索候補の表示
-    searchInput.addEventListener('input', () => {
-        clearTimeout(debounceTimeout);
-        debounceTimeout = setTimeout(async () => {
-            const query = searchInput.value.trim();
-            if (query.length < 2) {
-                searchSuggestions.style.display = 'none';
-                return;
-            }
-
-            try {
-                const suggestions = await fetchAPI('/api/v1/search/suggestions', { q: query });
-                if (suggestions && suggestions.length > 0) {
-                    searchSuggestions.innerHTML = suggestions
-                        .map(suggestion => `
-                            <div class="suggestion-item">
-                                <i class="fas fa-search"></i>
-                                <span>${suggestion}</span>
-                            </div>
-                        `).join('');
-                    searchSuggestions.style.display = 'block';
-                }
-            } catch (error) {
-                console.error('検索候補の取得に失敗:', error);
-            }
-        }, 300);
-    });
-
-    // 検索実行
-    searchForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const query = searchInput.value.trim();
-        if (query) {
-            showLoadingOverlay();
-            try {
-                const videos = await searchVideos(query, currentFilters);
-                router.navigate(`${window.location.origin}/results`, { 
-                    search_query: query,
-                    ...currentFilters
-                });
-                renderVideos(videos);
-            } catch (error) {
-                console.error('検索に失敗しました:', error);
-            } finally {
-                hideLoadingOverlay();
-                searchSuggestions.style.display = 'none';
-            }
-        }
-    });
-
-    // 検索候補クリック
-    searchSuggestions.addEventListener('click', (e) => {
-        const suggestionItem = e.target.closest('.suggestion-item');
-        if (suggestionItem) {
-            searchInput.value = suggestionItem.querySelector('span').textContent;
-            searchForm.dispatchEvent(new Event('submit'));
-        }
-    });
-
-    // 検索候補の非表示
-    document.addEventListener('click', (e) => {
-        if (!searchInput.contains(e.target) && !searchSuggestions.contains(e.target)) {
-            searchSuggestions.style.display = 'none';
-        }
-    });
-}
-
-// フィルター機能の設定
-function setupFilters() {
-    const filterDropdown = document.getElementById('filterDropdown');
-    const filterButton = document.getElementById('filterButton');
-
-    filterButton.addEventListener('click', () => {
-        filterDropdown.style.display = 
-            filterDropdown.style.display === 'none' ? 'block' : 'none';
-    });
-
-    // フィルターの変更を監視
-    document.querySelectorAll('.filter-section input').forEach(input => {
-        input.addEventListener('change', async () => {
-            if (input.type === 'radio') {
-                currentFilters[input.name] = input.value;
-            } else if (input.type === 'checkbox') {
-                const index = currentFilters.type.indexOf(input.value);
-                if (input.checked && index === -1) {
-                    currentFilters.type.push(input.value);
-                } else if (!input.checked && index !== -1) {
-                    currentFilters.type.splice(index, 1);
-                }
-            }
-
-            // 現在の検索クエリで再検索
-            const searchInput = document.getElementById('search');
-            const query = searchInput.value.trim();
-            if (query) {
-                const videos = await searchVideos(query, currentFilters);
-                renderVideos(videos);
-            }
-        });
-    });
-
-    // フィルタードロップダウンの外側クリックで閉じる
-    document.addEventListener('click', (e) => {
-        if (!filterButton.contains(e.target) && !filterDropdown.contains(e.target)) {
-            filterDropdown.style.display = 'none';
-        }
-    });
-}
-
-// ページ読み込み時に設定を適用
-document.addEventListener('DOMContentLoaded', () => {
-    setupSearchForm();
-    setupFilters();
-    // ...existing code...
 });
