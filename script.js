@@ -120,12 +120,12 @@ async function getVideoDetails(videoId) {
     try {
         const response = await fetch(`${currentInstance}/api/v1/videos/${videoId}`);
         if (!response.ok) {
-            throw new Error('動画の詳細を取得できませんでした');
+            throw new Error('動画の取得に失敗しました');
         }
         return await response.json();
     } catch (error) {
-        console.error('動画の詳細の取得中にエラーが発生しました:', error);
-        return null;
+        console.error('動画データの取得エラー:', error);
+        throw error;
     }
 }
 
@@ -485,16 +485,48 @@ function renderVideos(videos) {
 
 // ユーティリティ関数
 function formatDuration(seconds) {
-    if (!seconds) return '';
-    
+    if (!seconds) return '0:00';
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
-    const remainingSeconds = seconds % 60;
+    const secs = seconds % 60;
     
     if (hours > 0) {
-        return `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+        return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     }
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+    return `${minutes}:${secs.toString().padStart(2, '0')}`;
+}
+
+function formatViews(views) {
+    if (views >= 1000000000) {
+        return `${Math.floor(views / 100000000) / 10}B`;
+    }
+    if (views >= 1000000) {
+        return `${Math.floor(views / 100000) / 10}M`;
+    }
+    if (views >= 1000) {
+        return `${Math.floor(views / 100) / 10}K`;
+    }
+    return views.toString();
+}
+
+function formatDate(dateString) {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diff = now - date;
+    
+    const seconds = Math.floor(diff / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+    const months = Math.floor(days / 30);
+    const years = Math.floor(days / 365);
+
+    if (years > 0) return `${years}年前`;
+    if (months > 0) return `${months}ヶ月前`;
+    if (days > 0) return `${days}日前`;
+    if (hours > 0) return `${hours}時間前`;
+    if (minutes > 0) return `${minutes}分前`;
+    return '数秒前';
 }
 
 function formatViewCount(count) {
@@ -805,4 +837,350 @@ window.addEventListener('DOMContentLoaded', async () => {
     } catch (error) {
         console.error('初期化エラー:', error);
     }
+});
+
+// ショート動画の管理クラス
+class ShortsPlayer {
+    constructor() {
+        this.currentShort = 0;
+        this.shorts = [];
+        this.isPlaying = false;
+        this.container = document.querySelector('.shorts-video-container');
+        this.setupEventListeners();
+    }
+
+    async loadShorts() {
+        try {
+            // Invidiousからショート動画を取得（lengthが60秒以下の動画をフィルタリング）
+            const response = await fetch(`${currentInstance}/api/v1/trending?type=short`);
+            const videos = await response.json();
+            this.shorts = videos.filter(video => video.lengthSeconds <= 60);
+            this.playShort(0);
+        } catch (error) {
+            console.error('ショート動画の読み込みに失敗しました:', error);
+        }
+    }
+
+    setupEventListeners() {
+        // ナビゲーションボタン
+        document.querySelector('.shorts-nav.prev').addEventListener('click', () => this.previousShort());
+        document.querySelector('.shorts-nav.next').addEventListener('click', () => this.nextShort());
+
+        // キーボードナビゲーション
+        document.addEventListener('keydown', (e) => {
+            if (document.getElementById('shortsContent').style.display === 'none') return;
+            
+            if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                this.previousShort();
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                this.nextShort();
+            }
+        });
+
+        // アクションボタン
+        const actions = document.querySelectorAll('.shorts-action');
+        actions.forEach(action => {
+            action.addEventListener('click', (e) => {
+                if (action.classList.contains('like-button')) {
+                    this.handleLike();
+                } else if (action.classList.contains('comment-button')) {
+                    this.toggleComments();
+                }
+            });
+        });
+    }
+
+    async playShort(index) {
+        if (!this.shorts[index]) return;
+
+        const short = this.shorts[index];
+        this.currentShort = index;
+
+        // 動画プレーヤーの更新
+        this.container.innerHTML = `
+            <iframe
+                src="${currentInstance}/embed/${short.videoId}?autoplay=1&loop=1"
+                width="100%"
+                height="100%"
+                frameborder="0"
+                allowfullscreen
+            ></iframe>
+        `;
+
+        // 情報の更新
+        document.querySelector('.shorts-title').textContent = short.title;
+        document.querySelector('.shorts-channel .channel-name').textContent = short.author;
+        document.querySelector('.shorts-action.like-button .count').textContent = this.formatCount(short.likeCount);
+        document.querySelector('.shorts-action.comment-button .count').textContent = this.formatCount(short.commentCount);
+    }
+
+    previousShort() {
+        if (this.currentShort > 0) {
+            this.playShort(this.currentShort - 1);
+        }
+    }
+
+    nextShort() {
+        if (this.currentShort < this.shorts.length - 1) {
+            this.playShort(this.currentShort + 1);
+        }
+    }
+
+    handleLike() {
+        const likeButton = document.querySelector('.shorts-action.like-button');
+        likeButton.classList.toggle('active');
+    }
+
+    toggleComments() {
+        const comments = document.querySelector('.shorts-comments');
+        const isHidden = comments.style.display === 'none';
+        comments.style.display = isHidden ? 'block' : 'none';
+        
+        if (isHidden) {
+            this.loadComments();
+        }
+    }
+
+    async loadComments() {
+        const short = this.shorts[this.currentShort];
+        if (!short) return;
+
+        try {
+            const response = await fetch(`${currentInstance}/api/v1/comments/${short.videoId}`);
+            const comments = await response.json();
+            this.displayComments(comments);
+        } catch (error) {
+            console.error('コメントの読み込みに失敗しました:', error);
+        }
+    }
+
+    displayComments(comments) {
+        const container = document.querySelector('.comments-container');
+        container.innerHTML = comments.map(comment => `
+            <div class="comment">
+                <div class="comment-avatar">
+                    <i class="fas fa-user-circle"></i>
+                </div>
+                <div class="comment-content">
+                    <div class="comment-author">${comment.author}</div>
+                    <div class="comment-text">${comment.text}</div>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    formatCount(count) {
+        if (count >= 1000000) {
+            return `${(count / 1000000).toFixed(1)}M`;
+        } else if (count >= 1000) {
+            return `${(count / 1000).toFixed(1)}K`;
+        }
+        return count.toString();
+    }
+}
+
+// ショート動画セクションの切り替え
+document.querySelector('[data-page="shorts"]').addEventListener('click', () => {
+    document.getElementById('regularContent').style.display = 'none';
+    document.getElementById('shortsContent').style.display = 'block';
+    
+    // ショートプレーヤーの初期化
+    if (!window.shortsPlayer) {
+        window.shortsPlayer = new ShortsPlayer();
+        window.shortsPlayer.loadShorts();
+    }
+});
+
+// 通常コンテンツへの切り替え
+document.querySelector('[data-page="home"]').addEventListener('click', () => {
+    document.getElementById('regularContent').style.display = 'block';
+    document.getElementById('shortsContent').style.display = 'none';
+});
+
+// URLルーティングとページ管理
+class Router {
+    constructor() {
+        this.routes = {
+            '/': this.showHome.bind(this),
+            '/watch': this.showVideo.bind(this),
+            '/shorts': this.showShorts.bind(this),
+            '/results': this.showSearchResults.bind(this),
+            '/channel': this.showChannel.bind(this)
+        };
+        this.setupEventListeners();
+    }
+
+    setupEventListeners() {
+        window.addEventListener('popstate', () => this.handleRoute());
+        document.addEventListener('click', (e) => {
+            if (e.target.matches('a[data-route]')) {
+                e.preventDefault();
+                this.navigate(e.target.href);
+            }
+        });
+    }
+
+    navigate(url, params = {}) {
+        const urlObj = new URL(url);
+        if (params) {
+            Object.keys(params).forEach(key => 
+                urlObj.searchParams.set(key, params[key])
+            );
+        }
+        window.history.pushState({}, '', urlObj.toString());
+        this.handleRoute();
+    }
+
+    handleRoute() {
+        const path = window.location.pathname;
+        const handler = this.routes[path] || this.routes['/'];
+        handler(new URLSearchParams(window.location.search));
+    }
+
+    async showHome() {
+        document.getElementById('regularContent').style.display = 'block';
+        document.getElementById('shortsContent').style.display = 'none';
+        document.getElementById('videoModal').style.display = 'none';
+        await loadTrendingVideos();
+    }
+
+    async showVideo(params) {
+        const videoId = params.get('v');
+        if (!videoId) {
+            this.navigate('/');
+            return;
+        }
+
+        showLoadingOverlay();
+        try {
+            const video = await getVideoDetails(videoId);
+            await showVideoModal(video);
+            document.title = `${video.title} - ようつべ`;
+        } catch (error) {
+            console.error('動画の読み込みに失敗しました:', error);
+            this.navigate('/');
+        } finally {
+            hideLoadingOverlay();
+        }
+    }
+
+    showShorts() {
+        document.getElementById('regularContent').style.display = 'none';
+        document.getElementById('shortsContent').style.display = 'block';
+        document.getElementById('videoModal').style.display = 'none';
+        
+        if (!window.shortsPlayer) {
+            window.shortsPlayer = new ShortsPlayer();
+            window.shortsPlayer.loadShorts();
+        }
+    }
+
+    async showSearchResults(params) {
+        const query = params.get('search_query');
+        if (!query) {
+            this.navigate('/');
+            return;
+        }
+
+        document.getElementById('regularContent').style.display = 'block';
+        document.getElementById('shortsContent').style.display = 'none';
+        document.getElementById('videoModal').style.display = 'none';
+        
+        showLoadingOverlay();
+        try {
+            const results = await searchVideos(query);
+            displayVideos(results);
+            document.title = `${query} - ようつべ`;
+        } catch (error) {
+            console.error('検索に失敗しました:', error);
+        } finally {
+            hideLoadingOverlay();
+        }
+    }
+}
+
+// ローディング overlay の表示/非表示
+function showLoadingOverlay() {
+    let overlay = document.querySelector('.loading-overlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.className = 'loading-overlay';
+        overlay.innerHTML = '<div class="loading-spinner"><i class="fas fa-spinner fa-spin fa-3x"></i></div>';
+        document.body.appendChild(overlay);
+    }
+    overlay.style.display = 'flex';
+}
+
+function hideLoadingOverlay() {
+    const overlay = document.querySelector('.loading-overlay');
+    if (overlay) {
+        overlay.style.display = 'none';
+    }
+}
+
+// 動画カードの生成を更新
+function createVideoCard(video) {
+    const card = document.createElement('div');
+    card.className = 'video-card';
+    card.innerHTML = `
+        <div class="thumbnail-wrapper">
+            <img class="thumbnail" src="${currentInstance}/vi/${video.videoId}/maxres.jpg" 
+                 onerror="this.onerror=null; this.src='${currentInstance}/vi/${video.videoId}/mqdefault.jpg';"
+                 alt="${video.title}">
+            <span class="video-duration">${formatDuration(video.lengthSeconds)}</span>
+        </div>
+        <div class="video-info">
+            <div class="channel-avatar">
+                <img src="${video.authorThumbnails?.[0]?.url || ''}" alt="${video.author}" 
+                     onerror="this.src='https://via.placeholder.com/36'">
+            </div>
+            <div class="video-details">
+                <h3 class="video-title">${video.title}</h3>
+                <p class="channel-name">${video.author}</p>
+                <div class="video-meta">
+                    <span>${formatViews(video.viewCount)}回視聴</span>
+                    <span>•</span>
+                    <span>${formatDate(video.published)}</span>
+                </div>
+            </div>
+        </div>
+    `;
+
+    card.addEventListener('click', async () => {
+        router.navigate(`${window.location.origin}/watch?v=${video.videoId}`);
+    });
+
+    return card;
+}
+
+// 検索フォームの処理を更新
+document.querySelector('.search-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const searchInput = document.getElementById('search');
+    const query = searchInput.value.trim();
+    if (query) {
+        router.navigate(`${window.location.origin}/results`, { search_query: query });
+    }
+});
+
+// サイドバーナビゲーションの更新
+document.querySelectorAll('.nav-item').forEach(item => {
+    item.addEventListener('click', () => {
+        const page = item.dataset.page;
+        if (page === 'home') {
+            router.navigate('/');
+        } else if (page === 'shorts') {
+            router.navigate('/shorts');
+        }
+    });
+});
+
+// ルーターの初期化
+const router = new Router();
+
+// 初期ルートの処理
+document.addEventListener('DOMContentLoaded', () => {
+    router.handleRoute();
 });

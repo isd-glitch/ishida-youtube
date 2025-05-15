@@ -288,13 +288,32 @@ header {
 /* 動画カード */
 .video-card {
     cursor: pointer;
-    transition: transform 0.2s;
+    background: var(--background-color);
     border-radius: 12px;
     overflow: hidden;
+    transition: transform 0.2s;
+    display: flex;
+    flex-direction: column;
 }
 
 .video-card:hover {
-    transform: scale(1.02);
+    transform: translateY(-2px);
+}
+
+.thumbnail-wrapper {
+    position: relative;
+    width: 100%;
+    padding-top: 56.25%; /* 16:9 アスペクト比 */
+}
+
+.thumbnail {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    background: #1a1a1a;
 }
 
 .video-thumbnail {
@@ -931,4 +950,215 @@ header {
 
 .action-button:active::after {
     transform: translate(-50%, -50%) scale(2);
+}
+
+/* ショート動画のスタイル */
+.shorts-container {
+    display: flex;
+    height: calc(100vh - var(--header-height));
+    background: #000;
+}
+
+.shorts-player {
+    position: relative;
+    flex: 1;
+    max-width: 450px;
+    margin: 0 auto;
+    height: 100%;
+    background: #000;
+}
+
+.shorts-video-container {
+    width: 100%;
+    height: 100%;
+    position: relative;
+}
+
+.shorts-video-container video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.shorts-controls {
+    position: absolute;
+    right: 16px;
+    bottom: 100px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.shorts-action {
+    background: transparent;
+    border: none;
+    color: white;
+    font-size: 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 50%;
+    transition: background-color 0.2s;
+}
+
+.shorts-action:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.shorts-action .count {
+    font-size: 14px;
+}
+
+.shorts-info {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 16px;
+    color: white;
+    background: linear-gradient(transparent, rgba(0, 0, 0, 0.8));
+}
+
+.shorts-title {
+    font-size: 16px;
+    font-weight: 500;
+    margin-bottom: 8px;
+}
+
+.shorts-channel {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.shorts-channel .channel-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+}
+
+.shorts-channel .channel-name {
+    font-size: 14px;
+    flex: 1;
+}
+
+.shorts-channel .subscribe-button {
+    background: white;
+    color: black;
+    border: none;
+    border-radius: 18px;
+    padding: 6px 12px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.shorts-nav {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    color: white;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s;
+}
+
+.shorts-nav:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.shorts-nav.prev {
+    top: 16px;
+}
+
+.shorts-nav.next {
+    bottom: 16px;
+}
+
+.shorts-sidebar {
+    width: 400px;
+    background: var(--background-color);
+    border-left: 1px solid var(--border-color);
+    overflow-y: auto;
+}
+
+.shorts-comments {
+    padding: 16px;
+}
+
+.shorts-comments .comments-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.close-comments {
+    background: transparent;
+    border: none;
+    color: var(--text-color);
+    cursor: pointer;
+    padding: 8px;
+}
+
+/* ショートビデオカード */
+.shorts-card {
+    position: relative;
+    width: 100%;
+    padding-top: 177.78%; /* 9:16 アスペクト比 */
+    border-radius: 12px;
+    overflow: hidden;
+    cursor: pointer;
+}
+
+.shorts-card img {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.shorts-card .shorts-badge {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    background: red;
+    color: white;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* ローディング画面 */
+.loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--background-color);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.loading-spinner {
+    color: var(--text-color);
+    opacity: 0.8;
 }

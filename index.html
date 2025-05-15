@@ -92,59 +92,115 @@
     </nav>
 
     <div class="main-container">
-        <div class="category-chips" id="categoryChips">
-            <button class="chip active">すべて</button>
-            <button class="chip">音楽</button>
-            <button class="chip">ゲーム実況</button>
-            <button class="chip">ライブ</button>
-            <button class="chip">最近アップロードされた動画</button>
-            <button class="chip">視聴済み</button>
-        </div>
+        <div id="mainContent">
+            <div id="regularContent">
+                <div class="category-chips" id="categoryChips">
+                    <button class="chip active">すべて</button>
+                    <button class="chip">音楽</button>
+                    <button class="chip">ゲーム実況</button>
+                    <button class="chip">ライブ</button>
+                    <button class="chip">最近アップロードされた動画</button>
+                    <button class="chip">視聴済み</button>
+                </div>
 
-        <div class="content-grid" id="contentGrid">
-            <div id="mainContent">
-                <div class="filters">
-                    <button id="filterButton" class="filter-button">
-                        <i class="fas fa-filter"></i>
-                        フィルター
-                    </button>
-                    <div class="filter-dropdown" id="filterDropdown">
-                        <div class="filter-section">
-                            <h3>アップロード日</h3>
-                            <label><input type="radio" name="uploadDate" value="hour"> 1時間以内</label>
-                            <label><input type="radio" name="uploadDate" value="today"> 本日</label>
-                            <label><input type="radio" name="uploadDate" value="week"> 今週</label>
-                            <label><input type="radio" name="uploadDate" value="month"> 今月</label>
-                            <label><input type="radio" name="uploadDate" value="year"> 今年</label>
+                <div class="content-grid" id="contentGrid">
+                    <div id="mainContent">
+                        <div class="filters">
+                            <button id="filterButton" class="filter-button">
+                                <i class="fas fa-filter"></i>
+                                フィルター
+                            </button>
+                            <div class="filter-dropdown" id="filterDropdown">
+                                <div class="filter-section">
+                                    <h3>アップロード日</h3>
+                                    <label><input type="radio" name="uploadDate" value="hour"> 1時間以内</label>
+                                    <label><input type="radio" name="uploadDate" value="today"> 本日</label>
+                                    <label><input type="radio" name="uploadDate" value="week"> 今週</label>
+                                    <label><input type="radio" name="uploadDate" value="month"> 今月</label>
+                                    <label><input type="radio" name="uploadDate" value="year"> 今年</label>
+                                </div>
+                                <div class="filter-section">
+                                    <h3>種類</h3>
+                                    <label><input type="checkbox" name="type" value="video"> 動画</label>
+                                    <label><input type="checkbox" name="type" value="channel"> チャンネル</label>
+                                    <label><input type="checkbox" name="type" value="playlist"> プレイリスト</label>
+                                    <label><input type="checkbox" name="type" value="movie"> 映画</label>
+                                </div>
+                                <div class="filter-section">
+                                    <h3>長さ</h3>
+                                    <label><input type="radio" name="duration" value="short"> 4分以下</label>
+                                    <label><input type="radio" name="duration" value="medium"> 4-20分</label>
+                                    <label><input type="radio" name="duration" value="long"> 20分以上</label>
+                                </div>
+                                <div class="filter-section">
+                                    <h3>並び替え</h3>
+                                    <label><input type="radio" name="sort" value="relevance"> 関連度</label>
+                                    <label><input type="radio" name="sort" value="date"> アップロード日</label>
+                                    <label><input type="radio" name="sort" value="views"> 視聴回数</label>
+                                    <label><input type="radio" name="sort" value="rating"> 評価</label>
+                                </div>
+                            </div>
                         </div>
-                        <div class="filter-section">
-                            <h3>種類</h3>
-                            <label><input type="checkbox" name="type" value="video"> 動画</label>
-                            <label><input type="checkbox" name="type" value="channel"> チャンネル</label>
-                            <label><input type="checkbox" name="type" value="playlist"> プレイリスト</label>
-                            <label><input type="checkbox" name="type" value="movie"> 映画</label>
+
+                        <main id="videoContainer">
+                            <div class="loading-spinner" id="loading">
+                                <i class="fas fa-spinner fa-spin fa-2x"></i>
+                            </div>
+                        </main>
+                    </div>
+                </div>
+            </div>
+
+            <div id="shortsContent" style="display: none;">
+                <div class="shorts-header">
+                    <h2><i class="fas fa-bolt"></i> ショート</h2>
+                </div>
+                <div class="shorts-container">
+                    <div id="shortsPlayer" class="shorts-player">
+                        <div class="shorts-video-container"></div>
+                        <div class="shorts-controls">
+                            <button class="shorts-action like-button">
+                                <i class="fas fa-thumbs-up"></i>
+                                <span class="count">0</span>
+                            </button>
+                            <button class="shorts-action dislike-button">
+                                <i class="fas fa-thumbs-down"></i>
+                            </button>
+                            <button class="shorts-action comment-button">
+                                <i class="fas fa-comment"></i>
+                                <span class="count">0</span>
+                            </button>
+                            <button class="shorts-action share-button">
+                                <i class="fas fa-share"></i>
+                            </button>
                         </div>
-                        <div class="filter-section">
-                            <h3>長さ</h3>
-                            <label><input type="radio" name="duration" value="short"> 4分以下</label>
-                            <label><input type="radio" name="duration" value="medium"> 4-20分</label>
-                            <label><input type="radio" name="duration" value="long"> 20分以上</label>
+                        <div class="shorts-info">
+                            <div class="shorts-title"></div>
+                            <div class="shorts-channel">
+                                <img class="channel-avatar" src="" alt="">
+                                <span class="channel-name"></span>
+                                <button class="subscribe-button">登録</button>
+                            </div>
                         </div>
-                        <div class="filter-section">
-                            <h3>並び替え</h3>
-                            <label><input type="radio" name="sort" value="relevance"> 関連度</label>
-                            <label><input type="radio" name="sort" value="date"> アップロード日</label>
-                            <label><input type="radio" name="sort" value="views"> 視聴回数</label>
-                            <label><input type="radio" name="sort" value="rating"> 評価</label>
+                        <button class="shorts-nav prev">
+                            <i class="fas fa-chevron-up"></i>
+                        </button>
+                        <button class="shorts-nav next">
+                            <i class="fas fa-chevron-down"></i>
+                        </button>
+                    </div>
+                    <div class="shorts-sidebar">
+                        <div class="shorts-comments" style="display: none;">
+                            <div class="comments-header">
+                                <h3>コメント</h3>
+                                <button class="close-comments">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                            <div class="comments-container"></div>
                         </div>
                     </div>
                 </div>
-
-                <main id="videoContainer">
-                    <div class="loading-spinner" id="loading">
-                        <i class="fas fa-spinner fa-spin fa-2x"></i>
-                    </div>
-                </main>
             </div>
         </div>
     </div>
