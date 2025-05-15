@@ -1,10 +1,10 @@
 const INVIDIOUS_INSTANCES = [
-    'https://invidious.projectsegfau.lt',
-    'https://iv.nboeck.de',
-    'https://invidious.private.coffee',
-    'https://invidious.slipfox.xyz',
+    'https://vid.puffyan.us',
     'https://yt.artemislena.eu',
-    'https://invidious.dhusch.de'
+    'https://invidious.snopyta.org',
+    'https://invidious.kavin.rocks',
+    'https://invidious.tiekoetter.com',
+    'https://inv.riverside.rocks'
 ];
 
 let currentInstance = INVIDIOUS_INSTANCES[0];
@@ -30,14 +30,16 @@ const endpoints = {
 async function switchToWorkingInstance() {
     for (const instance of INVIDIOUS_INSTANCES) {
         try {
-            const response = await fetch(`${instance}/api/v1/stats`);
+            const response = await fetch(`${instance}/api/v1/stats`, {
+                timeout: 5000
+            });
             if (response.ok) {
                 currentInstance = instance;
                 console.log(`使用するインスタンス: ${instance}`);
                 return true;
             }
         } catch (error) {
-            console.log(`インスタンス ${instance} は利用できません`);
+            console.log(`インスタンス ${instance} は利用できません: ${error.message}`);
         }
     }
     return false;
@@ -189,6 +191,23 @@ function getVideoThumbnailUrls(videoId) {
     };
 }
 
+// サムネイル読み込みのエラーハンドリング
+function handleThumbnailError(img) {
+    img.onerror = null; // 無限ループを防ぐ
+    if (img.dataset.retryCount && parseInt(img.dataset.retryCount) >= 3) {
+        img.src = '/assets/thumbnail-placeholder.png'; // フォールバック画像
+        return;
+    }
+    
+    img.dataset.retryCount = (img.dataset.retryCount ? parseInt(img.dataset.retryCount) : 0) + 1;
+    const videoId = img.dataset.videoId;
+    if (!videoId) return;
+    
+    // 別のインスタンスでサムネイルを試す
+    const instanceIndex = parseInt(img.dataset.retryCount) % INVIDIOUS_INSTANCES.length;
+    img.src = `${INVIDIOUS_INSTANCES[instanceIndex]}/vi/${videoId}/maxres.jpg`;
+}
+
 // 動画カードの作成
 function createVideoCard(video, isRelated = false) {
     const videoCard = document.createElement('div');
@@ -200,7 +219,7 @@ function createVideoCard(video, isRelated = false) {
     videoCard.innerHTML = `
         <div class="video-thumbnail">
             <img src="${thumbnails.hqdefault}" alt="${video.title}" loading="lazy" 
-                 onerror="this.src='${thumbnails.mqdefault}'">
+                 onerror="handleThumbnailError(this)" data-video-id="${video.videoId}">
             ${duration ? `<span class="video-duration">${duration}</span>` : ''}
         </div>
         <div class="video-info">
@@ -1060,7 +1079,7 @@ function createVideoCard(video) {
     card.innerHTML = `
         <div class="thumbnail-wrapper">
             <img class="thumbnail" src="${currentInstance}/vi/${video.videoId}/maxres.jpg" 
-                 onerror="this.onerror=null; this.src='${currentInstance}/vi/${video.videoId}/mqdefault.jpg';"
+                 onerror="handleThumbnailError(this)" data-video-id="${video.videoId}"
                  alt="${video.title}">
             <span class="video-duration">${formatDuration(video.lengthSeconds)}</span>
         </div>
