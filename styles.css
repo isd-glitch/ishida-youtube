@@ -288,6 +288,13 @@ header {
 /* 動画カード */
 .video-card {
     cursor: pointer;
+    transition: transform 0.2s;
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.video-card:hover {
+    transform: scale(1.02);
 }
 
 .video-thumbnail {
@@ -316,7 +323,8 @@ header {
 
 .video-info {
     padding: 12px 0;
-    display: flex;
+    display: grid;
+    grid-template-columns: auto 1fr;
     gap: 12px;
 }
 
@@ -334,29 +342,34 @@ header {
 }
 
 .video-details {
-    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
 }
 
 .video-title {
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 500;
-    margin: 0 0 4px;
+    line-height: 1.4;
+    margin: 0;
     display: -webkit-box;
     -webkit-line-clamp: 2;
-    line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
     color: var(--text-color);
 }
 
-.video-meta {
-    font-size: 14px;
-    color: var(--secondary-text);
+.channel-name {
+    font-size: 13px;
+    color: var(--secondary-text-color);
+    margin: 0;
 }
 
-.video-meta span:not(:last-child)::after {
-    content: "•";
-    margin: 0 4px;
+.video-meta {
+    font-size: 13px;
+    color: var(--secondary-text-color);
+    display: flex;
+    gap: 4px;
 }
 
 /* モーダル */
@@ -413,49 +426,70 @@ header {
 
 /* 動画情報セクション */
 .video-info-section {
-    margin-top: 20px;
-    padding: 20px 0;
+    padding: 20px;
     border-bottom: 1px solid var(--border-color);
 }
 
 .video-primary-info {
-    margin-bottom: 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 16px;
 }
 
 .video-title-container {
-    margin-bottom: 12px;
+    flex: 1;
 }
 
 .video-title-container h1 {
-    font-size: 20px;
-    margin: 0 0 8px;
+    font-size: 18px;
+    font-weight: 500;
+    margin: 0 0 8px 0;
+    line-height: 1.4;
 }
 
 .video-meta-stats {
     font-size: 14px;
-    color: var(--secondary-text);
+    color: var(--secondary-text-color);
 }
 
 .video-actions {
     display: flex;
-    gap: 16px;
-    margin-top: 16px;
+    gap: 8px;
+    align-items: center;
+    padding: 8px 0;
 }
 
 .action-button {
+    background: var(--button-bg);
+    border: none;
+    border-radius: 18px;
+    padding: 6px 12px;
+    color: var(--text-color);
+    font-size: 14px;
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 8px 16px;
-    border: none;
-    border-radius: 18px;
-    background: var(--hover-color);
-    color: var(--text-color);
     cursor: pointer;
+    transition: background-color 0.2s;
 }
 
 .action-button:hover {
-    background: var(--hover-color);
+    background: var(--button-hover-bg);
+}
+
+.like-button, .dislike-button {
+    background: var(--button-bg);
+    padding: 8px 16px;
+}
+
+.like-button.active {
+    color: var(--primary-color);
+}
+
+.like-count {
+    font-size: 14px;
+    font-weight: 500;
 }
 
 /* チャンネル情報 */
@@ -463,7 +497,7 @@ header {
     display: flex;
     align-items: center;
     gap: 12px;
-    margin-bottom: 16px;
+    margin: 16px 0;
 }
 
 .channel-details {
@@ -482,13 +516,19 @@ header {
 }
 
 .subscribe-button {
-    padding: 10px 16px;
+    background: #cc0000;
+    color: white;
     border: none;
     border-radius: 18px;
-    background: var(--red);
-    color: white;
+    padding: 8px 16px;
+    font-size: 14px;
     font-weight: 500;
     cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.subscribe-button:hover {
+    background: #aa0000;
 }
 
 /* コメントセクション */
@@ -745,4 +785,149 @@ header {
 
 .video-info-section {
     padding: 16px;
+}
+
+.gradient-icon {
+    background: linear-gradient(45deg, #ff0000, #0066ff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: gradientShift 5s ease infinite;
+}
+
+@keyframes gradientShift {
+    0% {
+        background-position: 0% 50%;
+    }
+    50% {
+        background-position: 100% 50%;
+    }
+    100% {
+        background-position: 0% 50%;
+    }
+}
+
+.content-grid {
+    padding: 20px;
+    display: grid;
+    gap: 16px;
+}
+
+#mainContent {
+    width: 100%;
+}
+
+#videoContainer {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 16px;
+    padding: 0 16px;
+}
+
+.thumbnail-container {
+    position: relative;
+    width: 100%;
+    padding-top: 56.25%; /* 16:9 アスペクト比 */
+    background: #f1f1f1;
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.thumbnail-container img {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+/* ダークモード対応 */
+[data-theme="dark"] {
+    --button-bg: rgba(255, 255, 255, 0.1);
+    --button-hover-bg: rgba(255, 255, 255, 0.2);
+    --secondary-text-color: #aaa;
+}
+
+[data-theme="light"] {
+    --button-bg: rgba(0, 0, 0, 0.05);
+    --button-hover-bg: rgba(0, 0, 0, 0.1);
+    --secondary-text-color: #606060;
+}
+
+/* レスポンシブグリッドレイアウト */
+@media (min-width: 1600px) {
+    #videoContainer {
+        grid-template-columns: repeat(5, minmax(250px, 1fr));
+    }
+}
+
+@media (min-width: 1200px) and (max-width: 1599px) {
+    #videoContainer {
+        grid-template-columns: repeat(4, minmax(250px, 1fr));
+    }
+}
+
+@media (min-width: 800px) and (max-width: 1199px) {
+    #videoContainer {
+        grid-template-columns: repeat(3, minmax(250px, 1fr));
+    }
+}
+
+@media (min-width: 500px) and (max-width: 799px) {
+    #videoContainer {
+        grid-template-columns: repeat(2, minmax(250px, 1fr));
+    }
+}
+
+@media (max-width: 499px) {
+    #videoContainer {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* アクセシビリティの改善 */
+.video-card:focus {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+.action-button:focus {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+/* ホバーエフェクトの改善 */
+.video-card {
+    background: var(--card-bg);
+    border-radius: 12px;
+    overflow: hidden;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.video-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* アクションボタンのアニメーション */
+.action-button {
+    position: relative;
+    overflow: hidden;
+}
+
+.action-button::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(circle, rgba(255,255,255,0.2) 0%, transparent 70%);
+    transform: translate(-50%, -50%) scale(0);
+    transition: transform 0.3s;
+}
+
+.action-button:active::after {
+    transform: translate(-50%, -50%) scale(2);
 }

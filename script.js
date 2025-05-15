@@ -1,12 +1,13 @@
-const INSTANCES = [
-    'https://y.com.sb',
-    'https://invidious.nerdvpn.de',
-    'https://inv.vern.cc',
-    'https://invidious.protokolla.fi',
-    'https://yt.artemislena.eu'
+const INVIDIOUS_INSTANCES = [
+    'https://invidious.projectsegfau.lt',
+    'https://iv.nboeck.de',
+    'https://invidious.private.coffee',
+    'https://invidious.slipfox.xyz',
+    'https://yt.artemislena.eu',
+    'https://invidious.dhusch.de'
 ];
 
-let currentInstance = INSTANCES[0];
+let currentInstance = INVIDIOUS_INSTANCES[0];
 let currentVideos = [];
 let currentFilters = {
     uploadDate: '',
@@ -25,22 +26,18 @@ const endpoints = {
     channel: '/api/v1/channels'
 };
 
-// インスタンスの可用性チェック
-async function checkInstance(instance) {
-    try {
-        const response = await fetch(`${instance}/api/v1/stats`);
-        return response.ok;
-    } catch (error) {
-        return false;
-    }
-}
-
-// 利用可能なインスタンスを見つける
-async function findWorkingInstance() {
-    for (const instance of INSTANCES) {
-        if (await checkInstance(instance)) {
-            currentInstance = instance;
-            return true;
+// インスタンスの可用性をチェックし、利用可能なインスタンスに切り替える
+async function switchToWorkingInstance() {
+    for (const instance of INVIDIOUS_INSTANCES) {
+        try {
+            const response = await fetch(`${instance}/api/v1/stats`);
+            if (response.ok) {
+                currentInstance = instance;
+                console.log(`使用するインスタンス: ${instance}`);
+                return true;
+            }
+        } catch (error) {
+            console.log(`インスタンス ${instance} は利用できません`);
         }
     }
     return false;
@@ -59,9 +56,9 @@ async function fetchAPI(endpoint, params = {}) {
     } catch (error) {
         console.error('API Error:', error);
         // 別のインスタンスを試す
-        const currentIndex = INSTANCES.indexOf(currentInstance);
-        if (currentIndex < INSTANCES.length - 1) {
-            currentInstance = INSTANCES[currentIndex + 1];
+        const currentIndex = INVIDIOUS_INSTANCES.indexOf(currentInstance);
+        if (currentIndex < INVIDIOUS_INSTANCES.length - 1) {
+            currentInstance = INVIDIOUS_INSTANCES[currentIndex + 1];
             console.log('Switching to instance:', currentInstance);
             return fetchAPI(endpoint, params);
         }
@@ -73,11 +70,10 @@ async function fetchAPI(endpoint, params = {}) {
 async function searchVideos(query) {
     showLoading(true);
     try {
-        const videos = await fetchAPI('/api/v1/search', {
-            q: query,
-            type: 'video',
-            region: 'JP'
-        });
+        await switchToWorkingInstance();
+        const response = await fetch(`${currentInstance}/api/v1/search?q=${encodeURIComponent(query)}`);
+        if (!response.ok) throw new Error('検索に失敗しました');
+        const videos = await response.json();
         return Array.isArray(videos) ? videos : [];
     } catch (error) {
         console.error('検索エラー:', error);
@@ -361,6 +357,13 @@ async function showVideoModal(video) {
     const relatedVideos = await getRelatedVideos(video.videoId);
     renderRelatedVideos(relatedVideos);
     
+    // 視聴履歴に追加
+    userPrefs.addToWatchHistory(video);
+    
+    // 関連動画の取得と表示を更新
+    const recommendations = await userPrefs.getRecommendations();
+    renderRelatedVideos(recommendations);
+    
     modal.style.display = 'block';
 }
 
@@ -550,8 +553,7 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         const query = searchInput.value.trim();
         if (query) {
-            const videos = await searchVideos(query);
-            renderVideos(applyFilters(videos));
+            handleSearch(query);
         }
     });
     
@@ -635,3 +637,172 @@ async function init() {
             '<p style="text-align: center; padding: 20px;">サーバーに接続できません。</p>';
     }
 }
+
+// ユーザーの検索履歴とおすすめ情報を管理するクラス
+class UserPreferences {
+    constructor() {
+        this.searchHistory = this.getFromStorage('searchHistory') || [];
+        this.watchHistory = this.getFromStorage('watchHistory') || [];
+        this.preferences = this.getFromStorage('preferences') || {
+            categories: {},
+            tags: {},
+            channels: {}
+        };
+    }
+
+    // ローカルストレージから情報を取得
+    getFromStorage(key) {
+        const data = localStorage.getItem(`youtubeclone_${key}`);
+        return data ? JSON.parse(data) : null;
+    }
+
+    // ローカルストレージに情報を保存
+    saveToStorage(key, data) {
+        localStorage.setItem(`youtubeclone_${key}`, JSON.stringify(data));
+    }
+
+    // 検索クエリを履歴に追加
+    addSearchQuery(query) {
+        this.searchHistory.unshift(query);
+        if (this.searchHistory.length > 100) {
+            this.searchHistory.pop();
+        }
+        this.saveToStorage('searchHistory', this.searchHistory);
+    }
+
+    // 視聴した動画を履歴に追加
+    addToWatchHistory(video) {
+        const now = new Date().toISOString();
+        this.watchHistory.unshift({
+            videoId: video.videoId,
+            title: video.title,
+            timestamp: now,
+            tags: video.tags || [],
+            category: video.category
+        });
+
+        // カテゴリと関連タグの重みを更新
+        this.updatePreferences(video);
+        
+        if (this.watchHistory.length > 200) {
+            this.watchHistory.pop();
+        }
+        this.saveToStorage('watchHistory', this.watchHistory);
+        this.saveToStorage('preferences', this.preferences);
+    }
+
+    // ユーザーの興味関心を更新
+    updatePreferences(video) {
+        // カテゴリの重みを更新
+        if (video.category) {
+            this.preferences.categories[video.category] = 
+                (this.preferences.categories[video.category] || 0) + 1;
+        }
+
+        // タグの重みを更新
+        if (video.tags) {
+            video.tags.forEach(tag => {
+                this.preferences.tags[tag] = 
+                    (this.preferences.tags[tag] || 0) + 1;
+            });
+        }
+
+        // チャンネルの重みを更新
+        if (video.channelId) {
+            this.preferences.channels[video.channelId] = 
+                (this.preferences.channels[video.channelId] || 0) + 1;
+        }
+    }
+
+    // おすすめ動画のスコアを計算
+    calculateVideoScore(video) {
+        let score = 0;
+
+        // カテゴリマッチ
+        if (video.category && this.preferences.categories[video.category]) {
+            score += this.preferences.categories[video.category] * 2;
+        }
+
+        // タグマッチ
+        if (video.tags) {
+            video.tags.forEach(tag => {
+                if (this.preferences.tags[tag]) {
+                    score += this.preferences.tags[tag];
+                }
+            });
+        }
+
+        // チャンネルマッチ
+        if (video.channelId && this.preferences.channels[video.channelId]) {
+            score += this.preferences.channels[video.channelId] * 3;
+        }
+
+        return score;
+    }
+
+    // おすすめ動画を取得
+    async getRecommendations() {
+        try {
+            // 最近の検索クエリとカテゴリから動画を取得
+            const recentQueries = this.searchHistory.slice(0, 5);
+            const topCategories = Object.entries(this.preferences.categories)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 3)
+                .map(([category]) => category);
+
+            // 複数のクエリを並行して実行
+            const videos = await Promise.all([
+                ...recentQueries.map(query => searchVideos(query)),
+                ...topCategories.map(category => getCategoryVideos(category))
+            ]);
+
+            // 結果を統合してスコアを計算
+            const allVideos = videos.flat();
+            const scoredVideos = allVideos.map(video => ({
+                ...video,
+                score: this.calculateVideoScore(video)
+            }));
+
+            // スコアで並び替えて重複を除去
+            return Array.from(new Set(scoredVideos
+                .sort((a, b) => b.score - a.score)
+                .map(video => video.videoId)))
+                .slice(0, 20);
+        } catch (error) {
+            console.error('おすすめ動画の取得中にエラーが発生しました:', error);
+            return [];
+        }
+    }
+}
+
+// ユーザー設定のインスタンスを作成
+const userPrefs = new UserPreferences();
+
+// 検索機能を更新
+async function handleSearch(query) {
+    if (!query) return;
+    
+    userPrefs.addSearchQuery(query);
+    const videos = await searchVideos(query);
+    renderVideos(videos);
+}
+
+// ページ読み込み時におすすめを表示
+window.addEventListener('DOMContentLoaded', async () => {
+    try {
+        const success = await switchToWorkingInstance();
+        if (!success) {
+            alert('申し訳ありませんが、現在サービスにアクセスできません。後でもう一度お試しください。');
+        }
+        const recommendations = await userPrefs.getRecommendations();
+        if (recommendations.length > 0) {
+            renderVideos(recommendations);
+        } else {
+            // 初回訪問時は人気の動画を表示
+            const trendingVideos = await getCategoryVideos('trending');
+            renderVideos(trendingVideos);
+        }
+    } catch (error) {
+        console.error('初期化エラー:', error);
+    }
+});
