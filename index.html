@@ -3,25 +3,226 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Modern YouTube Viewer</title>
+    <title>YouTube</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
 </head>
 <body>
     <header>
-        <div class="search-container">
-            <input type="text" id="search" placeholder="動画を検索...">
-            <button id="searchButton">
-                <i class="fas fa-search"></i>
-            </button>
+        <div class="header-content">
+            <div class="header-start">
+                <button class="menu-button" id="menuToggle">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <div class="logo">
+                    <i class="fab fa-youtube" style="color: #ff0000;"></i>
+                    <span>YouTube</span>
+                </div>
+            </div>
+            
+            <div class="search-container">
+                <form class="search-form">
+                    <div class="search-input-container">
+                        <input type="text" id="search" placeholder="検索">
+                        <div class="search-suggestions" id="searchSuggestions"></div>
+                    </div>
+                    <button type="submit" id="searchButton">
+                        <i class="fas fa-search"></i>
+                    </button>
+                </form>
+                <button class="voice-search-button" title="音声で検索">
+                    <i class="fas fa-microphone"></i>
+                </button>
+            </div>
+            
+            <div class="header-end">
+                <button class="create-video-button" title="作成">
+                    <i class="fas fa-video"></i>
+                </button>
+                <button class="notifications-button" title="通知">
+                    <i class="fas fa-bell"></i>
+                </button>
+                <button id="themeToggle" title="テーマ切替">
+                    <i class="fas fa-moon"></i>
+                </button>
+            </div>
         </div>
     </header>
 
-    <main id="videoContainer">
-        <div class="loading-spinner" id="loading">
-            <i class="fas fa-spinner fa-spin fa-2x"></i>
+    <nav class="sidebar" id="sidebar">
+        <div class="sidebar-section">
+            <div class="nav-item active" data-page="home">
+                <i class="fas fa-home"></i>
+                <span>ホーム</span>
+            </div>
+            <div class="nav-item" data-page="shorts">
+                <i class="fas fa-bolt"></i>
+                <span>ショート</span>
+            </div>
+            <div class="nav-item" data-page="subscriptions">
+                <i class="fas fa-play-circle"></i>
+                <span>登録チャンネル</span>
+            </div>
         </div>
-    </main>
+        
+        <div class="sidebar-section">
+            <div class="section-title">見つける</div>
+            <div class="nav-item" data-page="trending">
+                <i class="fas fa-fire"></i>
+                <span>急上昇</span>
+            </div>
+            <div class="nav-item" data-page="music">
+                <i class="fas fa-music"></i>
+                <span>音楽</span>
+            </div>
+            <div class="nav-item" data-page="gaming">
+                <i class="fas fa-gamepad"></i>
+                <span>ゲーム</span>
+            </div>
+            <div class="nav-item" data-page="news">
+                <i class="fas fa-newspaper"></i>
+                <span>ニュース</span>
+            </div>
+            <div class="nav-item" data-page="sports">
+                <i class="fas fa-futbol"></i>
+                <span>スポーツ</span>
+            </div>
+        </div>
+    </nav>
+
+    <div class="main-container">
+        <div class="category-chips" id="categoryChips">
+            <button class="chip active">すべて</button>
+            <button class="chip">音楽</button>
+            <button class="chip">ゲーム実況</button>
+            <button class="chip">ライブ</button>
+            <button class="chip">最近アップロードされた動画</button>
+            <button class="chip">視聴済み</button>
+        </div>
+
+        <div class="content-grid" id="contentGrid">
+            <div id="mainContent">
+                <div class="filters">
+                    <button id="filterButton" class="filter-button">
+                        <i class="fas fa-filter"></i>
+                        フィルター
+                    </button>
+                    <div class="filter-dropdown" id="filterDropdown">
+                        <div class="filter-section">
+                            <h3>アップロード日</h3>
+                            <label><input type="radio" name="uploadDate" value="hour"> 1時間以内</label>
+                            <label><input type="radio" name="uploadDate" value="today"> 本日</label>
+                            <label><input type="radio" name="uploadDate" value="week"> 今週</label>
+                            <label><input type="radio" name="uploadDate" value="month"> 今月</label>
+                            <label><input type="radio" name="uploadDate" value="year"> 今年</label>
+                        </div>
+                        <div class="filter-section">
+                            <h3>種類</h3>
+                            <label><input type="checkbox" name="type" value="video"> 動画</label>
+                            <label><input type="checkbox" name="type" value="channel"> チャンネル</label>
+                            <label><input type="checkbox" name="type" value="playlist"> プレイリスト</label>
+                            <label><input type="checkbox" name="type" value="movie"> 映画</label>
+                        </div>
+                        <div class="filter-section">
+                            <h3>長さ</h3>
+                            <label><input type="radio" name="duration" value="short"> 4分以下</label>
+                            <label><input type="radio" name="duration" value="medium"> 4-20分</label>
+                            <label><input type="radio" name="duration" value="long"> 20分以上</label>
+                        </div>
+                        <div class="filter-section">
+                            <h3>並び替え</h3>
+                            <label><input type="radio" name="sort" value="relevance"> 関連度</label>
+                            <label><input type="radio" name="sort" value="date"> アップロード日</label>
+                            <label><input type="radio" name="sort" value="views"> 視聴回数</label>
+                            <label><input type="radio" name="sort" value="rating"> 評価</label>
+                        </div>
+                    </div>
+                </div>
+
+                <main id="videoContainer">
+                    <div class="loading-spinner" id="loading">
+                        <i class="fas fa-spinner fa-spin fa-2x"></i>
+                    </div>
+                </main>
+            </div>
+        </div>
+    </div>
+
+    <div id="videoModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle"></h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="video-player-container">
+                    <div id="videoPlayer"></div>
+                    <div class="video-info-section">
+                        <div class="video-primary-info">
+                            <div class="video-title-container">
+                                <h1 class="video-title"></h1>
+                                <div class="video-meta-stats"></div>
+                            </div>
+                            <div class="video-actions">
+                                <button class="action-button like-button">
+                                    <i class="fas fa-thumbs-up"></i>
+                                    <span class="like-count">0</span>
+                                </button>
+                                <button class="action-button dislike-button">
+                                    <i class="fas fa-thumbs-down"></i>
+                                </button>
+                                <button class="action-button share-button">
+                                    <i class="fas fa-share"></i>
+                                    <span>共有</span>
+                                </button>
+                                <button class="action-button save-button">
+                                    <i class="fas fa-folder-plus"></i>
+                                    <span>保存</span>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="video-secondary-info">
+                            <div class="channel-info">
+                                <div class="channel-avatar">
+                                    <img src="" alt="">
+                                </div>
+                                <div class="channel-details">
+                                    <h3 class="channel-name"></h3>
+                                    <span class="subscriber-count"></span>
+                                </div>
+                                <button class="subscribe-button">登録</button>
+                            </div>
+                            <div class="video-description"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="comments-section">
+                        <div class="comments-header">
+                            <h3>コメント</h3>
+                            <button class="sort-comments">
+                                <i class="fas fa-sort"></i>
+                                並び替え
+                            </button>
+                        </div>
+                        <div class="add-comment">
+                            <div class="user-avatar">
+                                <i class="fas fa-user-circle"></i>
+                            </div>
+                            <input type="text" placeholder="コメントを追加...">
+                        </div>
+                        <div id="comments-container"></div>
+                    </div>
+                </div>
+                
+                <div class="related-videos">
+                    <h3>関連動画</h3>
+                    <div id="relatedVideosContainer"></div>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <script src="script.js"></script>
 </body>
