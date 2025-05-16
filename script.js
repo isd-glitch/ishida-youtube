@@ -1,23 +1,26 @@
 class InvidiousAPI {
     constructor() {
         this.instances = [
-            'https://invidious.projectsegfau.lt',
-            'https://invidious.dhusch.de',
-            'https://inv.bp.projectsegfau.lt',
-            'https://invidious.slipfox.xyz',
-            'https://invidious.privacydev.net',
-            'https://vid.puffyan.us',
-            'https://yt.artemislena.eu'
+            'https://wataamee.glitch.me',
+            'https://watawatawata.glitch.me',
+            'https://amenable-charm-lute.glitch.me',
+            'https://watawata37.glitch.me',
+            'https://wtserver1.glitch.me',
+            'https://battle-deciduous-bear.glitch.me',
+            'https://productive-noon-van.glitch.me',
+            'https://balsam-secret-fine.glitch.me'
         ];
         this.currentInstance = this.instances[0];
         this.retryCount = 3;
         this.instanceIndex = 0;
+        this.timeout = 30000; // タイムアウトを30秒に設定（wakame-tubeは応答が遅い場合があるため）
+        this.maxRetries = 3;  // 最大リトライ回数を増やす
     }
 
     async init() {
         await this.switchToWorkingInstance();
-        // 定期的にインスタンスの健全性をチェック
-        setInterval(() => this.checkInstanceHealth(), 300000); // 5分ごと
+        // インスタンスの健全性チェックを10分ごとに行う
+        setInterval(() => this.checkInstanceHealth(), 600000);
     }
 
     async checkInstanceHealth() {
@@ -73,27 +76,44 @@ class InvidiousAPI {
     }
 
     async request(endpoint, params = {}) {
+        let attempts = 0;
         let lastError;
-        for (let i = 0; i < this.retryCount; i++) {
+
+        while (attempts < this.maxRetries) {
             try {
+                // wakame-tubeのAPIエンドポイントに合わせて修正
                 const queryString = new URLSearchParams(params).toString();
-                const url = `${this.currentInstance}${endpoint}${queryString ? '?' + queryString : ''}`;
-                const response = await this.fetchWithTimeout(url);
+                const url = `${this.currentInstance}/api${endpoint}${queryString ? '?' + queryString : ''}`;
+                
+                const response = await this.fetchWithTimeout(url, {
+                    timeout: this.timeout,
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
                 
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
                 
-                return await response.json();
+                const data = await response.json();
+                return data;
             } catch (error) {
                 lastError = error;
-                await this.switchToWorkingInstance();
+                attempts++;
+                
+                if (attempts < this.maxRetries) {
+                    await this.switchToWorkingInstance();
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
             }
         }
-        throw lastError;
+        
+        console.error('リクエスト失敗:', lastError);
+        throw new Error('サーバーに接続できません。後でもう一度お試しください。');
     }
 
-    // 検索API
+    // 検索API（wakame-tube形式に合わせて修正）
     async search(query, params = {}) {
         const searchParams = {
             q: query,
@@ -106,18 +126,28 @@ class InvidiousAPI {
             ...params
         };
         
-        return this.request('/api/v1/search', searchParams);
+        return this.request('/search', searchParams);
     }
 
-    // 動画詳細の取得
+    // wakame-tube形式のエンドポイントに修正
     async getVideoDetails(videoId) {
         try {
-            const data = await this.request(`/api/v1/videos/${videoId}`);
-            // HLSストリームURLを追加
-            if (data.adaptiveFormats) {
-                data.hlsUrl = data.adaptiveFormats
-                    .find(format => format.type.includes('video'))?.url;
+            const data = await this.request(`/videos/${videoId}`);
+            
+            if (!data.formatStreams || data.formatStreams.length === 0) {
+                throw new Error('動画ストリームが利用できません');
             }
+
+            // HLSストリームの追加
+            if (data.adaptiveFormats) {
+                const videoFormats = data.adaptiveFormats.filter(
+                    format => format.type?.includes('video')
+                );
+                if (videoFormats.length > 0) {
+                    data.hlsUrl = videoFormats[0].url;
+                }
+            }
+
             return data;
         } catch (error) {
             console.error('動画詳細の取得に失敗:', error);
@@ -125,24 +155,24 @@ class InvidiousAPI {
         }
     }
 
-    // トレンド動画の取得
+    // トレンド動画の取得（wakame-tube形式）
     async getTrending(params = {}) {
-        return this.request('/api/v1/trending', { region: 'JP', ...params });
+        return this.request('/trending', { region: 'JP', ...params });
     }
 
-    // コメントの取得
+    // コメントの取得（wakame-tube形式）
     async getComments(videoId) {
-        return this.request(`/api/v1/comments/${videoId}`);
+        return this.request(`/comments/${videoId}`);
     }
 
-    // チャンネル情報の取得
+    // チャンネル情報の取得（wakame-tube形式）
     async getChannel(channelId) {
-        return this.request(`/api/v1/channels/${channelId}`);
+        return this.request(`/channels/${channelId}`);
     }
 
     // サムネイルURLの生成
     getThumbnailUrl(videoId, quality = 'hqdefault') {
-        // プライマリとフォールバックのサムネイルURLを生成
+        // wakame-tubeのサムネイルエンドポイントを使用
         const urls = this.instances.map(instance => 
             `${instance}/vi/${videoId}/${quality}.jpg`
         );
@@ -151,6 +181,242 @@ class InvidiousAPI {
         urls.push(`https://i.ytimg.com/vi/${videoId}/${quality}.jpg`);
         
         return urls;
+    }
+}
+
+// VideoManager クラス - 動画の状態管理
+class VideoManager {
+    constructor(api) {
+        this.api = api;
+        this.currentVideo = null;
+        this.currentVideos = [];
+        this.searchHistory = new Set();
+        this.watchHistory = new Set();
+        this.loadHistoryFromStorage();
+        this.formats = new Map();
+    }
+
+    // ローカルストレージからの履歴読み込み
+    loadHistoryFromStorage() {
+        try {
+            const searchHistory = localStorage.getItem('searchHistory');
+            const watchHistory = localStorage.getItem('watchHistory');
+            if (searchHistory) this.searchHistory = new Set(JSON.parse(searchHistory));
+            if (watchHistory) this.watchHistory = new Set(JSON.parse(watchHistory));
+        } catch (error) {
+            console.error('履歴の読み込みに失敗しました:', error);
+        }
+    }
+
+    // 履歴の保存
+    saveHistoryToStorage() {
+        try {
+            localStorage.setItem('searchHistory', JSON.stringify([...this.searchHistory]));
+            localStorage.setItem('watchHistory', JSON.stringify([...this.watchHistory]));
+        } catch (error) {
+            console.error('履歴の保存に失敗しました:', error);
+        }
+    }
+
+    // 検索履歴に追加
+    addToSearchHistory(query) {
+        this.searchHistory.add(query);
+        if (this.searchHistory.size > 100) {
+            const [firstItem] = this.searchHistory;
+            this.searchHistory.delete(firstItem);
+        }
+        this.saveHistoryToStorage();
+    }
+
+    // 視聴履歴に追加
+    addToWatchHistory(videoId) {
+        this.watchHistory.add(videoId);
+        if (this.watchHistory.size > 200) {
+            const [firstItem] = this.watchHistory;
+            this.watchHistory.delete(firstItem);
+        }
+        this.saveHistoryToStorage();
+    }
+
+    // 検索の実行
+    async search(query, params = {}) {
+        try {
+            this.addToSearchHistory(query);
+            const results = await this.api.search(query, params);
+            this.currentVideos = results;
+            return results;
+        } catch (error) {
+            console.error('検索に失敗しました:', error);
+            throw error;
+        }
+    }
+
+    // 動画の読み込み
+    async loadVideo(videoId) {
+        try {
+            const video = await this.api.getVideoDetails(videoId);
+            this.currentVideo = video;
+            this.addToWatchHistory(videoId);
+            return video;
+        } catch (error) {
+            console.error('動画の読み込みに失敗しました:', error);
+            throw error;
+        }
+    }
+
+    // トレンド動画の取得
+    async getTrending(params = {}) {
+        try {
+            const videos = await this.api.getTrending(params);
+            this.currentVideos = videos;
+            return videos;
+        } catch (error) {
+            console.error('トレンド動画の取得に失敗しました:', error);
+            throw error;
+        }
+    }
+
+    // 動画のストリーミングURLを取得
+    async getVideoStreamUrl(videoId, quality = 'medium') {
+        try {
+            const videoInfo = await this.api.getVideoDetails(videoId);
+            if (!videoInfo.formatStreams) {
+                throw new Error('利用可能なストリームが見つかりません');
+            }
+
+            // フォーマットをキャッシュ
+            this.formats.set(videoId, videoInfo.formatStreams);
+
+            // 品質に基づいてストリームを選択
+            const streams = videoInfo.formatStreams.sort((a, b) => {
+                const qualityA = parseInt(a.quality) || 0;
+                const qualityB = parseInt(b.quality) || 0;
+                return qualityB - qualityA;
+            });
+
+            let selectedStream;
+            switch (quality) {
+                case 'high':
+                    selectedStream = streams[0];
+                    break;
+                case 'low':
+                    selectedStream = streams[streams.length - 1];
+                    break;
+                default:
+                    selectedStream = streams[Math.floor(streams.length / 2)] || streams[0];
+            }
+
+            if (!selectedStream || !selectedStream.url) {
+                throw new Error('適切なストリームが見つかりません');
+            }
+
+            return selectedStream.url;
+        } catch (error) {
+            console.error('ストリームURLの取得に失敗:', error);
+            throw error;
+        }
+    }
+
+    // 動画の再生
+    async playVideo(videoId, quality = 'medium') {
+        try {
+            const streamUrl = await this.getVideoStreamUrl(videoId, quality);
+            const videoDetails = await this.api.getVideoDetails(videoId);
+            this.currentVideo = videoDetails;
+            this.addToWatchHistory(videoId);
+
+            return {
+                streamUrl,
+                details: videoDetails
+            };
+        } catch (error) {
+            console.error('動画の再生に失敗:', error);
+            throw error;
+        }
+    }
+}
+
+// ビデオプレーヤーのセットアップ
+async function setupVideoPlayer(videoId) {
+    try {
+        loading.style.display = 'block';
+        const api = new InvidiousAPI();
+        const videoData = await api.getVideoDetails(videoId);
+        
+        const player = document.getElementById('player');
+        const videoTitle = document.getElementById('video-title');
+        const videoDescription = document.getElementById('video-description');
+        
+        // タイトルと説明の設定
+        videoTitle.textContent = videoData.title;
+        videoDescription.textContent = videoData.description || '説明はありません';
+        
+        // 動画ソースの選択（HLSが利用可能な場合は優先）
+        if (videoData.hlsUrl) {
+            if (Hls.isSupported()) {
+                const hls = new Hls();
+                hls.loadSource(videoData.hlsUrl);
+                hls.attachMedia(player);
+                hls.on(Hls.Events.ERROR, function(event, data) {
+                    console.error('HLSエラー:', data);
+                    fallbackToDirectStream(player, videoData);
+                });
+            } else {
+                fallbackToDirectStream(player, videoData);
+            }
+        } else {
+            fallbackToDirectStream(player, videoData);
+        }
+        
+        // サムネイルの読み込み
+        loadThumbnail(videoData.videoId);
+        
+        loading.style.display = 'none';
+    } catch (error) {
+        console.error('動画の読み込みに失敗:', error);
+        loading.style.display = 'none';
+        showError('動画の読み込みに失敗しました。再試行してください。');
+    }
+}
+
+// 直接ストリームへのフォールバック
+function fallbackToDirectStream(player, videoData) {
+    const formats = videoData.formatStreams || [];
+    if (formats.length > 0) {
+        // 最高品質の動画を選択
+        const bestFormat = formats.reduce((prev, current) => {
+            const prevQuality = parseInt(prev.quality) || 0;
+            const currentQuality = parseInt(current.quality) || 0;
+            return currentQuality > prevQuality ? current : prev;
+        });
+        
+        player.src = bestFormat.url;
+        player.load();
+    } else {
+        showError('動画ストリームが利用できません');
+    }
+}
+
+// サムネイルの読み込み
+async function loadThumbnail(videoId) {
+    const api = new InvidiousAPI();
+    const thumbnailUrls = api.getThumbnailUrl(videoId);
+    
+    for (const url of thumbnailUrls) {
+        try {
+            const response = await fetch(url);
+            if (response.ok) {
+                const thumbnailElements = document.querySelectorAll(`[data-video-id="${videoId}"] img`);
+                thumbnailElements.forEach(img => {
+                    img.src = url;
+                    img.style.display = 'block';
+                });
+                break;
+            }
+        } catch (error) {
+            console.warn('サムネイルの読み込みに失敗:', url);
+            continue;
+        }
     }
 }
 
@@ -486,6 +752,8 @@ class VideoPlayer {
         this.manager = manager;
         this.currentVideo = null;
         this.quality = 'medium';
+        this.loadingTimeout = null;
+        this.maxLoadingTime = 30000; // 最大ローディング時間: 30秒
         this.setupPlayer();
     }
 
@@ -523,6 +791,9 @@ class VideoPlayer {
     }
 
     async loadVideo(videoId) {
+        this.clearLoadingTimeout();
+        this.setLoadingTimeout();
+
         try {
             const videoData = await this.manager.playVideo(videoId, this.quality);
             this.currentVideo = videoData.details;
@@ -530,33 +801,104 @@ class VideoPlayer {
             const video = this.container.querySelector('video');
             const source = video.querySelector('source');
             
-            // まずHLSストリームを試す
-            if (videoData.details.hlsUrl) {
-                if (Hls.isSupported()) {
-                    const hls = new Hls();
-                    hls.loadSource(videoData.details.hlsUrl);
-                    hls.attachMedia(video);
-                    hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                        video.play();
-                    });
-                } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                    video.src = videoData.details.hlsUrl;
-                    video.play();
+            // 再生方法の優先順位付け
+            const playMethods = [
+                // 1. HLSストリーム
+                async () => {
+                    if (videoData.details.hlsUrl) {
+                        return await this.playHLSStream(video, videoData.details.hlsUrl);
+                    }
+                    throw new Error('HLSストリームが利用できません');
+                },
+                // 2. 通常のストリーム
+                async () => {
+                    if (videoData.streamUrl) {
+                        return await this.playRegularStream(video, source, videoData.streamUrl);
+                    }
+                    throw new Error('通常ストリームが利用できません');
+                },
+                // 3. 代替インスタンス
+                async () => {
+                    await this.manager.api.switchToWorkingInstance();
+                    const newVideoData = await this.manager.playVideo(videoId, this.quality);
+                    return await this.playRegularStream(video, source, newVideoData.streamUrl);
                 }
-            } else {
-                // 通常のストリームにフォールバック
-                source.src = videoData.streamUrl;
-                video.load();
-                video.play();
+            ];
+
+            // 各再生方法を順番に試す
+            for (const method of playMethods) {
+                try {
+                    await method();
+                    this.clearLoadingTimeout();
+                    this.updateVideoInfo(videoData.details);
+                    return true;
+                } catch (error) {
+                    console.warn('再生方法が失敗:', error);
+                    continue;
+                }
             }
 
-            // タイトルと情報を更新
-            this.updateVideoInfo(videoData.details);
-            return true;
+            throw new Error('すべての再生方法が失敗しました');
         } catch (error) {
             console.error('動画の読み込みに失敗:', error);
             this.handleVideoError(error);
             return false;
+        }
+    }
+
+    async playHLSStream(video, hlsUrl) {
+        return new Promise((resolve, reject) => {
+            if (Hls.isSupported()) {
+                const hls = new Hls();
+                hls.loadSource(hlsUrl);
+                hls.attachMedia(video);
+                hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                    video.play().then(resolve).catch(reject);
+                });
+                hls.on(Hls.Events.ERROR, (event, data) => {
+                    reject(new Error('HLSストリームの読み込みに失敗しました'));
+                });
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                video.src = hlsUrl;
+                video.play().then(resolve).catch(reject);
+            } else {
+                reject(new Error('HLSがサポートされていません'));
+            }
+        });
+    }
+
+    async playRegularStream(video, source, streamUrl) {
+        return new Promise((resolve, reject) => {
+            source.src = streamUrl;
+            video.load();
+            
+            const onLoadedData = () => {
+                video.play()
+                    .then(resolve)
+                    .catch(reject);
+                video.removeEventListener('loadeddata', onLoadedData);
+            };
+
+            const onError = () => {
+                video.removeEventListener('error', onError);
+                reject(new Error('動画の読み込みに失敗しました'));
+            };
+
+            video.addEventListener('loadeddata', onLoadedData);
+            video.addEventListener('error', onError);
+        });
+    }
+
+    setLoadingTimeout() {
+        this.loadingTimeout = setTimeout(() => {
+            this.handleVideoError(new Error('読み込みがタイムアウトしました'));
+        }, this.maxLoadingTime);
+    }
+
+    clearLoadingTimeout() {
+        if (this.loadingTimeout) {
+            clearTimeout(this.loadingTimeout);
+            this.loadingTimeout = null;
         }
     }
 
@@ -666,18 +1008,107 @@ function handleThumbnailError(img) {
     }
 }
 
-// ローディングオーバーレイの制御
+// ローディング状態の管理クラス
+class LoadingManager {
+    constructor() {
+        this.loadingStates = new Map();
+        this.timeouts = new Map();
+    }
+
+    startLoading(id, timeout = 30000) {
+        if (this.loadingStates.size === 0) {
+            showLoadingOverlay();
+        }
+        this.loadingStates.set(id, true);
+
+        // タイムアウトの設定
+        const timeoutId = setTimeout(() => {
+            this.stopLoading(id);
+            showError('読み込みがタイムアウトしました。ページを更新してください。');
+        }, timeout);
+        this.timeouts.set(id, timeoutId);
+    }
+
+    stopLoading(id) {
+        this.loadingStates.delete(id);
+        const timeoutId = this.timeouts.get(id);
+        if (timeoutId) {
+            clearTimeout(timeoutId);
+            this.timeouts.delete(id);
+        }
+
+        if (this.loadingStates.size === 0) {
+            hideLoadingOverlay();
+        }
+    }
+}
+
+const loadingManager = new LoadingManager();
+
+// ローディングオーバーレイの改善
 function showLoadingOverlay() {
     const overlay = document.querySelector('.loading-overlay');
-    if (overlay) {
-        overlay.style.display = 'flex';
-    }
+    if (!overlay) return;
+
+    overlay.style.display = 'flex';
+    overlay.innerHTML = `
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <div class="loading-text">読み込み中...</div>
+        </div>
+    `;
 }
 
 function hideLoadingOverlay() {
     const overlay = document.querySelector('.loading-overlay');
-    if (overlay) {
-        overlay.style.display = 'none';
+    if (!overlay) return;
+
+    overlay.style.display = 'none';
+}
+
+// ビデオの読み込み関数を改善
+async function loadVideo(videoId) {
+    const loadingId = `video-${videoId}`;
+    loadingManager.startLoading(loadingId);
+
+    try {
+        const videoData = await videoManager.loadVideo(videoId);
+        if (!videoData) {
+            throw new Error('動画データを取得できませんでした');
+        }
+
+        await showVideoModal(videoData);
+        return true;
+    } catch (error) {
+        console.error('動画の読み込みエラー:', error);
+        showError('動画を読み込めませんでした');
+        return false;
+    } finally {
+        loadingManager.stopLoading(loadingId);
+    }
+}
+
+// 検索関数を改善
+async function handleSearch(query) {
+    if (!query.trim()) return;
+
+    const loadingId = `search-${Date.now()}`;
+    loadingManager.startLoading(loadingId);
+
+    try {
+        const results = await videoManager.search(query);
+        if (!results || results.length === 0) {
+            document.getElementById('videoContainer').innerHTML = 
+                '<div class="no-results">検索結果が見つかりませんでした</div>';
+            return;
+        }
+
+        renderVideos(results);
+    } catch (error) {
+        console.error('検索エラー:', error);
+        showError('検索中にエラーが発生しました');
+    } finally {
+        loadingManager.stopLoading(loadingId);
     }
 }
 
